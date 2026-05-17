@@ -13,6 +13,7 @@ Le webhook n8n forwarde via Cloudflare Tunnel sur ces routes.
 """
 from __future__ import annotations
 
+import base64
 import os
 import tempfile
 from contextlib import asynccontextmanager
@@ -65,7 +66,16 @@ async def lifespan(app: FastAPI):
 
     # STT chargé paresseusement (Whisper prend du temps à charger)
     app.state.stt = None  # lazy : initialisé au premier /intent/audio
-    app.state.tts = None  # lazy : initialisé au premier /intent/audio_full
+
+    # TTS chargé au démarrage (utilisé sur chaque /intent/text pour la voix Andrew)
+    try:
+        from jarvis.core.voice import JarvisTTS
+
+        app.state.tts = JarvisTTS()
+    except Exception as e:
+        # Échec init TTS : la PWA basculera sur sa synthèse navigateur fallback
+        print(f"[Jarvis] Échec init JarvisTTS : {e}")
+        app.state.tts = None
 
     yield
 
@@ -170,15 +180,53 @@ async def healthz() -> dict[str, Any]:
     }
 
 
-@app.post("/intent/text", response_model=IntentResponse)
+async def _synthesize_speak_audio(text: str) -> str | None:
+    """Synthétise la phrase majordome via Edge-TTS Andrew, retourne le mp3 en base64.
+
+    Renvoie None si le service TTS n'est pas disponible ou si la synthèse échoue —
+    la PWA basculera alors sur sa synthèse navigateur (Web Speech).
+    """
+    tts = getattr(app.state, "tts", None)
+    if tts is None or not text.strip():
+        return None
+    tmp_dir = Path(tempfile.mkdtemp())
+    tmp_mp3 = tmp_dir / "speak.mp3"
+    try:
+        await tts.synthesize(text, tmp_mp3)
+        audio_bytes = tmp_mp3.read_bytes()
+        return base64.b64encode(audio_bytes).decode("ascii")
+    except Exception as e:
+        print(f"[Jarvis] TTS synthèse échouée : {e}")
+        return None
+    finally:
+        try:
+            tmp_mp3.unlink(missing_ok=True)
+            tmp_dir.rmdir()
+        except Exception:
+            pass
+
+
+@app.post("/intent/text")
 async def intent_text(
     body: TextIntentRequest,
     _: None = Depends(require_bearer_token),
-) -> IntentResponse:
-    """Pipeline complet à partir d'un texte déjà transcrit."""
+) -> JSONResponse:
+    """Pipeline complet à partir d'un texte déjà transcrit.
+
+    Retourne le JSON IntentResponse enrichi avec `speak_audio_base64` (mp3 Andrew)
+    pour que la PWA puisse jouer la vraie voix Jarvis plutôt que la voix système.
+    """
     router: CommandRouter = app.state.command_router
     result = await router.handle_text(body.text, now=datetime.utcnow())
-    return _result_to_response(result)
+    response = _result_to_response(result)
+
+    audio_b64 = await _synthesize_speak_audio(result.speak)
+    payload = {
+        **response.model_dump(),
+        "speak_audio_base64": audio_b64,
+        "speak_audio_mime": "audio/mpeg" if audio_b64 else None,
+    }
+    return JSONResponse(content=payload)
 
 
 @app.post("/intent/audio", response_model=IntentResponse)
