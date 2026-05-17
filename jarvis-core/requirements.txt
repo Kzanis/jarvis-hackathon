@@ -2,10 +2,13 @@
 openai-whisper>=20231117
 elevenlabs>=1.0.0
 anthropic>=0.40.0
+openai>=1.55.0                # client LLM via OpenRouter (compatible OpenAI Chat Completions)
+edge-tts>=6.1.10              # TTS gratuit Microsoft Neural (voix Andrew)
 
 # HTTP server
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9       # FastAPI UploadFile (route /intent/audio)
 
 # HTTP client (TaHoma, Freebox, Devialet)
 requests>=2.32.0
