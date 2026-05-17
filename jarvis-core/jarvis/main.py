@@ -13,11 +13,13 @@ Le webhook n8n forwarde via Cloudflare Tunnel sur ces routes.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import os
+import secrets
 import tempfile
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -89,20 +91,47 @@ app = FastAPI(
 
 
 # ----------------------------------------------------------------------
-# Auth Bearer Token
+# Auth — Sessions Bearer Token (PRD §9.1)
 # ----------------------------------------------------------------------
 
-def require_bearer_token(authorization: str | None = Header(default=None)) -> None:
-    """Auth simple par Bearer Token (vient du webhook n8n)."""
-    expected = os.getenv("JARVIS_HTTP_TOKEN", "")
-    if not expected:
-        # Pas de token configuré -> mode dev local, on laisse passer
-        return
+# Identifiants login PWA (à définir via env vars sur la VM)
+AUTH_USERNAME = os.getenv("AUTH_USERNAME", "denis")
+AUTH_PASSWORD = os.getenv("AUTH_PASSWORD", "CHANGE_ME_AUTH_PWD")
+AUTH_SESSION_TTL_HOURS = int(os.getenv("AUTH_SESSION_TTL_HOURS", "4"))
+
+# Stockage in-memory des sessions (suffisant pour 1 user en MVP)
+# Format : {token: {"user_id": str, "expires_at": datetime}}
+_SESSIONS: dict[str, dict[str, Any]] = {}
+
+
+def _cleanup_expired_sessions(now: datetime) -> None:
+    expired = [t for t, s in _SESSIONS.items() if s["expires_at"] < now]
+    for t in expired:
+        _SESSIONS.pop(t, None)
+
+
+def require_session(authorization: str | None = Header(default=None)) -> str:
+    """Valide le Bearer Token de session (login obligatoire) — retourne user_id."""
+    if AUTH_PASSWORD == "CHANGE_ME_AUTH_PWD":
+        # Mode dev / placeholder non remplacé : on laisse passer mais on log
+        print("[Jarvis] WARN: AUTH_PASSWORD non configuré, auth désactivée")
+        return "denis"
+
     if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="Bearer token requis")
+        raise HTTPException(status_code=401, detail="Bearer token de session requis")
     token = authorization.split(" ", 1)[1].strip()
-    if token != expected:
-        raise HTTPException(status_code=401, detail="Token invalide")
+    session = _SESSIONS.get(token)
+    if not session:
+        raise HTTPException(status_code=401, detail="Session invalide")
+    if session["expires_at"] < datetime.utcnow():
+        _SESSIONS.pop(token, None)
+        raise HTTPException(status_code=401, detail="Session expirée")
+    return session["user_id"]
+
+
+# Compat ascendante : ancien Depends utilisé par /intent/audio*
+def require_bearer_token(authorization: str | None = Header(default=None)) -> None:
+    require_session(authorization)
 
 
 # ----------------------------------------------------------------------
@@ -164,8 +193,63 @@ def _result_to_response(result: CommandRouterResult) -> IntentResponse:
 
 
 # ----------------------------------------------------------------------
+# Schémas Auth
+# ----------------------------------------------------------------------
+
+class LoginRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    username: str = Field(..., min_length=1, max_length=64)
+    password: str = Field(..., min_length=1, max_length=256)
+
+
+class LoginResponse(BaseModel):
+    token: str
+    user_id: str
+    expires_at: str  # ISO 8601
+
+
+# ----------------------------------------------------------------------
 # Routes
 # ----------------------------------------------------------------------
+
+@app.post("/auth/login", response_model=LoginResponse)
+async def auth_login(body: LoginRequest) -> LoginResponse:
+    """Login PWA — vérifie identifiants contre AUTH_USERNAME/AUTH_PASSWORD env.
+
+    Renvoie un token de session valable AUTH_SESSION_TTL_HOURS heures.
+    """
+    if AUTH_PASSWORD == "CHANGE_ME_AUTH_PWD":
+        raise HTTPException(
+            status_code=503,
+            detail="Auth non configurée — AUTH_PASSWORD doit être défini dans .env serveur",
+        )
+
+    # Protection bruteforce minimale (délai constant si KO)
+    valid = (body.username == AUTH_USERNAME) and (body.password == AUTH_PASSWORD)
+    if not valid:
+        await asyncio.sleep(0.5)
+        raise HTTPException(status_code=401, detail="Identifiants invalides")
+
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.utcnow() + timedelta(hours=AUTH_SESSION_TTL_HOURS)
+    _SESSIONS[token] = {"user_id": body.username, "expires_at": expires_at}
+    _cleanup_expired_sessions(datetime.utcnow())
+
+    return LoginResponse(
+        token=token,
+        user_id=body.username,
+        expires_at=expires_at.isoformat() + "Z",
+    )
+
+
+@app.post("/auth/logout")
+async def auth_logout(authorization: str | None = Header(default=None)) -> dict[str, str]:
+    """Invalide le token de session courant."""
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+        _SESSIONS.pop(token, None)
+    return {"status": "logged_out"}
 
 @app.get("/healthz")
 async def healthz() -> dict[str, Any]:
@@ -209,7 +293,7 @@ async def _synthesize_speak_audio(text: str) -> str | None:
 @app.post("/intent/text")
 async def intent_text(
     body: TextIntentRequest,
-    _: None = Depends(require_bearer_token),
+    user_id: str = Depends(require_session),
 ) -> JSONResponse:
     """Pipeline complet à partir d'un texte déjà transcrit.
 
