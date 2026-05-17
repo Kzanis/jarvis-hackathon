@@ -1,34 +1,48 @@
 """Session conversationnelle multi-tours (in-memory).
 
-Mémoire courte qui porte l'historique pour passer plusieurs tours au LLM
-sans le recharger à chaque fois. Pas de persistance, pas de DB — c'est
-l'état conversationnel "ici et maintenant".
-
-Pour la sécurité critique (PendingConfirmation, PIN), c'est le Policy Engine
-qui gère via ConversationContext. Cette session-ci ne gère que la mémoire
-conversationnelle utile au LLM.
+Mémoire courte qui porte l'historique LLM + un éventuel **batch en attente**
+de confirmation orale (PRD §9.4). Le batch pending bloque l'exécution tant
+que Denis n'a pas confirmé "oui" (ou n'a pas annulé / fait expirer).
 """
 from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Iterable
+from typing import Any, Iterable
 
 
 MAX_HISTORY_TURNS = 6           # 3 tours user + 3 tours assistant
 SESSION_TTL_SECONDS = 90        # au-delà : on repart de zéro
+PENDING_TTL_SECONDS = 15        # PRD §9.4 — la confirmation expire en 15s
+
+
+@dataclass
+class PendingBatch:
+    """Batch de RoutedCommand en attente de confirmation orale.
+
+    `routed_commands` est typé `list[Any]` ici pour éviter une dépendance
+    circulaire vers `tool_router.RoutedCommand`. Le CommandRouter remplit
+    et consomme ce champ.
+    """
+
+    routed_commands: list[Any] = field(default_factory=list)
+    sensitivity_max: str = "sensible"   # "sensible" | "critique"
+    speak_question: str = ""             # phrase de demande de confirmation
+    created_at: float = field(default_factory=time.time)
+    expires_at: float = 0.0
+
+    def is_expired(self, now: float | None = None) -> bool:
+        return (now or time.time()) >= self.expires_at
 
 
 @dataclass
 class ConversationSession:
-    """Mémoire courte pour conversation Jarvis ↔ Denis.
-
-    history : liste OpenAI-compatible (role: user|assistant, content: str).
-    """
+    """Mémoire courte pour conversation Jarvis ↔ Denis."""
 
     user_id: str = "denis"
     history: list[dict[str, str]] = field(default_factory=list)
     last_turn_ts: float = field(default_factory=time.time)
+    pending: PendingBatch | None = None
 
     def is_expired(self, now: float | None = None) -> bool:
         now = now or time.time()
@@ -37,6 +51,36 @@ class ConversationSession:
     def reset(self) -> None:
         self.history = []
         self.last_turn_ts = time.time()
+        self.pending = None
+
+    # ----- gestion du batch en attente de confirmation -----
+
+    def set_pending(
+        self,
+        routed_commands: list[Any],
+        sensitivity_max: str,
+        speak_question: str,
+        now: float | None = None,
+    ) -> None:
+        ts = now or time.time()
+        self.pending = PendingBatch(
+            routed_commands=routed_commands,
+            sensitivity_max=sensitivity_max,
+            speak_question=speak_question,
+            created_at=ts,
+            expires_at=ts + PENDING_TTL_SECONDS,
+        )
+
+    def clear_pending(self) -> None:
+        self.pending = None
+
+    def get_pending(self, now: float | None = None) -> PendingBatch | None:
+        if self.pending is None:
+            return None
+        if self.pending.is_expired(now):
+            self.pending = None
+            return None
+        return self.pending
 
     def add_user(self, text: str) -> None:
         self._append({"role": "user", "content": text.strip()})
