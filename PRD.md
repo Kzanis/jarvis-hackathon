@@ -1128,3 +1128,71 @@ SEARCH_TIMEOUT_SECONDS=10
 ---
 
 *Search Web ajouté au plan V2 le 17 mai 2026 (demande Denis : « tu connais Bruce Springsteen »).*
+
+---
+
+## 19. Bugs identifiés en production — 17 mai 2026 (à corriger en priorité)
+
+Liste des anomalies remontées par Denis après tests en conditions réelles. **À traiter en première priorité à la prochaine session** avant tout ajout de feature.
+
+### 19.1 TaHoma — fermeture du garage ne fonctionne pas
+
+**Symptôme :** Denis dit « Ferme la porte du garage » → Jarvis répond mais l'action ne s'exécute pas (ou exécution silencieuse sans effet physique).
+
+**Hypothèse forte :** la `_COMMAND_MAP` de `handlers/tahoma.py` mappe `CommandAction.close` → commande Somfy `"close"`. Pour les devices de type `GarageDoor` (et `Gate`), la commande Somfy native peut être différente :
+- `"cycle"` (un seul mouvement bidirectionnel)
+- `"close"` ne pas être exposée si le moteur n'a qu'un cycle ouvert/fermé
+- `"deployment"` pour certains modèles
+
+**À investiguer :**
+1. Inspecter le catalogue retourné par `tahoma.list_devices()` en prod → regarder les `commandName` exposés pour le device `porte garage` (URL `881454`)
+2. Adapter `_COMMAND_MAP` par type de device dans `subagents/tahoma_agent.py` (mapping par `uiClass` ou `type`)
+3. Tester chaque commande supportée sur le vrai device
+
+### 19.2 TaHoma — ouverture du portail ne fonctionne pas
+
+**Symptôme :** Denis dit « Ouvre le portail » → Jarvis confirme + tente d'exécuter → portail ne bouge pas.
+
+**Hypothèse :** identique à 19.1. Les devices `Gate` Somfy exposent souvent une commande `cycle` ou `open/close/deployment` selon le modèle. Le mapping générique `open → "open"` peut être inadapté.
+
+**À investiguer :**
+- Faire un `list_devices` détaillé sur la VM et noter le `commandName` exact attendu par le `PORTAIL` (URL `16471272`)
+- Cas particulier : peut-être que le portail demande `cycle` ou une commande paramétrée (`partialOpen` avec valeur)
+- Vérifier les retours HTTP du `exec/apply` côté `TahomaHandler` — éventuelle erreur 400 silencieuse
+
+### 19.3 PWA — Mode mains libres (wake word « Jarvis ») non fonctionnel correctement
+
+**Symptôme :** activation du toggle « Mains libres » → comportement instable :
+- Wake word pas détecté de manière fiable
+- Coupures inattendues côté Safari iOS
+- Feedback acoustique possible (à investiguer)
+
+**Hypothèses :**
+- Web Speech `continuous: true` mal supporté sur iOS (limite ~30-60s)
+- Mon auto-restart sur `onend` ne couvre pas tous les cas d'erreur Safari
+- Regex de wake word trop stricte ou trop laxe
+- L'anti-feedback (pause pendant TTS) ne se déclenche peut-être pas assez tôt
+
+**À investiguer :**
+- Tester sur Android Chrome vs Safari iOS et comparer
+- Logger les events `onerror` / `onend` pour comprendre les coupures iOS
+- Évaluer alternative WASM (Porcupine ou OpenWakeWord) qui ne dépend pas de Web Speech
+- Ajouter un indicateur visuel quand la reco est effectivement active
+
+### 19.4 Priorité de correction (prochaine session)
+
+| # | Bug | Impact | Priorité |
+|---|---|---|---|
+| 1 | TaHoma close_garage (§19.1) | Démo critique — il faut le mouvement bidirectionnel | ⭐ P0 |
+| 2 | TaHoma open_gate (§19.2) | Démo critique — scène « portail » indispensable | ⭐ P0 |
+| 3 | Mains libres PWA (§19.3) | Feature bonus (PRD §13 Phase E), pas bloquant démo | P2 |
+
+### 19.5 Méthodologie à appliquer
+
+Avant tout autre fix, **inspecter le catalogue Somfy en prod** (commande `list_devices` du sous-agent TaHoma) et noter pour chaque device sa liste de `commandName` exposés. Construire alors un mapping `device_type → action → commandName` propre dans `tahoma_agent.py`.
+
+Tester ensuite chaque correctif **device par device** avant de passer au suivant. Pas de regression sur les volets qui fonctionnent (validés 14/05 sur volet buanderie et confirmés 17/05).
+
+---
+
+*Bugs production remontés par Denis le 17 mai 2026. P0 = à corriger en priorité absolue à la reprise.*
