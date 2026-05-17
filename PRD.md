@@ -935,3 +935,101 @@ L'image VM/Pi qu'on prépare doit être **identique** dans les deux cas. Le clie
 ---
 
 *Modèle commercial hardware acté le 17 mai 2026.*
+
+---
+
+## 17. Déploiement réel — 17 mai 2026 (verrou stratégique levé)
+
+### 17.1 Ce qui a été déployé
+
+**Jarvis tourne désormais 24/7 sur la Freebox Delta de Denis**, accessible depuis Internet via une URL publique fixe. Le critère de succès « le cerveau peut être appelé depuis Internet de manière fiable » (Codex dual-review 17/05) est ATTEINT.
+
+### 17.2 Architecture déployée (réelle)
+
+```
+Internet
+   │
+   │ HTTPS
+   ▼
+n8n Hostinger (creatorweb.fr/webhook/jarvis-command)
+   │ Bearer Token auth
+   │ HTTP POST forward
+   ▼
+Freebox Delta IP publique <IP_PUBLIQUE>:48765 (TCP NAT)
+   │ Redirection port Free → LAN
+   ▼
+VM Ubuntu 22.04 ARM64 sur Freebox (1024 Mo RAM, 2 CPU, 22 Go disque)
+   │ 192.168.1.142:8765
+   ▼
+FastAPI Jarvis (service systemd, restart auto au boot)
+   ├─ CommandRouter
+   ├─ LLMOrchestrator → Claude Haiku 4.5 via OpenRouter (URL fixe gratuit)
+   ├─ ToolRouter (validation JSON Schema + budgets)
+   ├─ Sous-agents TaHoma + Devialet + Agenda (mode mock V1)
+   └─ Audit HMAC SQLite
+   │
+   ▼ LAN 192.168.1.x (futur)
+TaHoma Switch 192.168.1.69 (réel, mode production à activer ultérieurement)
+```
+
+### 17.3 Spécificités Free / Freebox identifiées (à connaître pour install client)
+
+| Règle | Conséquence |
+|---|---|
+| **Freebox réserve ports ≤ 32768** | Choisir port externe NAT entre 32769 et 65535 obligatoirement (ex. 48765 retenu pour Jarvis) |
+| **Champ IP source obligatoire** dans redirection | Choisir « Toutes » dans menu déroulant (= 0.0.0.0/0) pour accès Internet entier |
+| **VM ARM64 cloud-image ≠ growroot** | L'auto-resize partition n'est PAS actif → `growpart /dev/vda 1` + `resize2fs /dev/vda1` manuels après agrandissement disque côté Freebox |
+| **Disque VM par défaut 2 Go** | Agrandir à minimum 20 Go pour install Python + venv + dépendances (compter ~12 Go utilisés) |
+| **RAM max VM Delta** | 1024 Mo alloués (= 957 par défaut, peut monter à 1024). Système Free réserve ~67 Mo. |
+
+### 17.4 URLs et points d'entrée stables
+
+| Service | URL / Endpoint |
+|---|---|
+| **Webhook public n8n** (entrée principale, à utiliser par la PWA Phase B) | `https://creatorweb.fr/webhook/jarvis-command` |
+| **Backend direct (debug/admin)** | `http://<IP_PUBLIQUE>:48765/healthz` |
+| **Backend pipeline texte** | `http://<IP_PUBLIQUE>:48765/intent/text` |
+| **Backend pipeline audio** | `http://<IP_PUBLIQUE>:48765/intent/audio` |
+| **SSH admin VM** | `ssh denis@192.168.1.142` (LAN uniquement) |
+| **Repo GitHub privé** | `Kzanis/jarvis-hackathon` |
+
+### 17.5 Métriques mesurées (test E2E réel 17/05)
+
+| Métrique | Valeur |
+|---|---|
+| Latence LLM (Claude Haiku 4.5 via OpenRouter) | 1.5 à 3.5 s |
+| Latence pipeline NAT + LAN | < 100 ms |
+| Latence exécution mock | 20-60 ms par tool |
+| Latence totale perçue | 2-4 s |
+| Consommation RAM service Jarvis | 49 Mo (49% buffer disponible) |
+| Tokens / commande simple | ~4500 in / 80 out |
+| Tokens / commande composée | ~4500 in / 200 out |
+| Coût par commande (OpenRouter) | ~$0.005 |
+
+### 17.6 Reproductibilité install client (artefacts versionnés dans le repo)
+
+- `vm-freebox/ubuntu-22.04-server-cloudimg-arm64.img` (image officielle Canonical, .gitignored)
+- `vm-freebox/user-data.yaml` (config cloud-init avec utilisateur + paquets + service systemd)
+- `vm-freebox/seed.iso` (CD-ROM cloud-init à attacher à la VM, .gitignored)
+- `vm-freebox/make_seed_iso.py` (régénère seed.iso depuis user-data.yaml)
+- `requirements.txt` (dépendances Python complètes avec openai, python-multipart, edge-tts ajoutés)
+
+### 17.7 Ce qui reste à faire (sem.2-3)
+
+- **Phase B — Front Hostinger** : projet Next.js `jarvis-cloud`, PWA installable, MicButton, Avatar HUD Canvas 2D
+- **Phase D — Vidéo Loom** : script + tournage plan-séquence + soumission 4 juin
+- **Activation mode production** : `EXECUTION_MODE=production` + `ALLOW_REAL_DEVICES=true` dans `.env` VM, **uniquement à la fin pour la démo Loom**, pour ne pas bouger les volets réels pendant les tests
+- **Migration Raspberry Pi (post-démo) ou client non-Free** : kit ~120 € selon §16
+
+### 17.8 Sécurité — invariants maintenus
+
+- ✅ Bearer Token Jarvis (`<N8N_TOKEN>`) appliqué côté n8n et passable côté backend (variable `JARVIS_HTTP_TOKEN` du `.env` VM)
+- ✅ Audit HMAC SQLite intact sur la VM (`/opt/jarvis/jarvis-core/data/audit.db`)
+- ✅ Mode mock par défaut (impossible d'activer prod sans 2 variables env explicites)
+- ✅ `.env` jamais commité (`.gitignore` strict + sécurité hook PAI)
+- ✅ Sous-agents allowlistés via Registry (hallucinations LLM rejetées avant exécution)
+- ✅ Budgets de commandes par requête (max 5 totales / 1 critique / 3 sensibles)
+
+---
+
+*Déploiement effectif acté le 17 mai 2026. Jarvis répond depuis Internet, hébergé sur la Freebox Delta de Denis sans matériel additionnel. Verrou stratégique du projet (Codex dual-review du matin) sauté.*
