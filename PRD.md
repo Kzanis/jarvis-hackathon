@@ -1196,3 +1196,142 @@ Tester ensuite chaque correctif **device par device** avant de passer au suivant
 ---
 
 *Bugs production remontés par Denis le 17 mai 2026. P0 = à corriger en priorité absolue à la reprise.*
+
+---
+
+## 20. Récap session 17 mai 2026 (J-18 du 4 juin)
+
+**Une journée. Tout le projet est passé du « squelette backend mock validé 14/05 » à « système complet en ligne, accessible depuis Internet, voix Andrew, sécurité OWASP-conforme, démonstrable en direct ».** Voici le journal complet pour la prochaine reprise.
+
+### 20.1 Ce qui a été livré
+
+**Pivot architectural (PRD §15)** :
+- Acté le modèle orchestrateur LLM + sous-agents (Option A : function-calling)
+- Dual-review Codex obtenu (GO-AVEC-CONDITIONS)
+- ROADMAP.md créé puis nettoyé des références passives (ateliers Academy retirés)
+
+**Backend Python `jarvis-core` (Freebox VM Ubuntu 22.04 ARM64)** :
+- 3 sous-agents complets : Tahoma (13 tools, mode production actif), Devialet (5 tools, mock V1), Agenda (5 tools, mock V1)
+- ToolRouter : validation JSON Schema maison, budgets (5 total / 1 critique / 3 sensibles), rejet hallucinations
+- LLMOrchestrator multi-provider (OpenRouter primaire → Claude Haiku 4.5, fallback Sonnet 4.6 / Anthropic / OpenAI)
+- ConversationSession multi-tours (TTL 90s) + état `pending` confirmation orale
+- CommandRouter unifié + audit HMAC SQLite signé
+- FastAPI : `/healthz`, `/intent/text` (avec mp3 Andrew base64 inline), `/intent/audio`, `/intent/audio_full`, `/auth/login`, `/auth/logout`, `/session/state`, `/session/reset`
+- Service systemd `jarvis.service` actif 24/7 (auto-restart)
+- Contexte temporel Europe/Paris injecté à chaque appel LLM
+- 6/6 tests pytest verts
+
+**Infrastructure** :
+- Repo GitHub privé `Kzanis/jarvis-hackathon`
+- VM Ubuntu sur Freebox Delta : 1024 Mo RAM, 2 CPU, 22 Go disque (agrandi depuis 2 Go via growpart manuel)
+- Cloud-init + seed.iso pour reproductibilité
+- Service systemd jarvis (PID stable, ~50 Mo RAM)
+- Sous-domaine `jarvis.creatorsystemia.fr` + SSL Lifetime Hostinger (créé via API)
+- Redirection port Freebox 48765 → 192.168.1.142:8765 (règle Free : ports externes > 32768)
+- PWA Next.js 16 statique déployée sur Hostinger (~/domains/creatorsystemia.fr/public_html/jarvis)
+
+**Pipeline cloud** :
+- Workflow n8n `Jarvis - Command Bridge` (lWH7699zkSGpCqFj) : webhook → forward transparent vers VM avec Bearer Token forwardé
+- Workflow n8n `Jarvis - Login` (1HLZnQVovXg0dUii) : webhook → forward VM /auth/login → réponse JSON
+- Mode production TaHoma activé + validé physiquement (volet buanderie : ferme/ouvre en vrai)
+
+**Voix Jarvis** :
+- Edge-TTS Andrew Multilingual Neural intégré dans `/intent/text` (mp3 base64 ~36 Ko/phrase)
+- Web Speech Recognition côté PWA (STT navigateur, fallback Web Speech Synthesis si Andrew indispo)
+- Wake word "Jarvis" hands-free (V1 livrée mais instable — bug §19.3)
+
+**Personnalité (PRD §5.4 enrichi)** :
+- personality.md pince-sans-rire JARVIS Iron Man + ironie élégante (antiphrase / sentence / observation)
+- 10 few-shot examples concrets ("Évidemment Monsieur", "Cela va de soi", "Ne modifiera pas mes tarifs")
+- Variabilité forcée (jamais 2 fois la même phrase d'affilée)
+- Garde-fous (jamais d'ironie sur commande sensible/critique)
+
+**Sécurité (PRD §9 implémenté)** :
+- Login user/password : identifiant `denis` + mot de passe défini par Denis dans `.env` VM
+- Token de session 4h (in-memory)
+- Bearer Token n8n statique RETIRÉ du bundle public PWA (récupéré dynamiquement après login)
+- Champ identifiant vide par défaut sur `/login` (pas de fuite d'indice)
+- Confirmation orale pour commandes sensibles/critiques (PRD §9.4) implémentée et validée
+- Workflow n8n transparent (plus de token partagé entre Hostinger et VM)
+- `.env.production` PWA contient uniquement URLs publiques (zéro secret)
+- `.gitignore` strict (audit.db, .env, *.mp3, /vm-freebox/* binaires)
+
+**PRD enrichi** :
+- §15 : pivot orchestrateur (matin)
+- §16 : modèle commercial hardware (Freebox 0€ / Pi 5 120-180€)
+- §17 : déploiement réel
+- §18 : sous-agent Search Perplexity (V2)
+- §19 : bugs production (close_garage, open_gate, mains libres)
+- §20 : ce récap
+
+### 20.2 Métriques mesurées
+
+| Métrique | Valeur |
+|---|---|
+| Latence LLM (Claude Haiku via OpenRouter) | 1.5-3.5 s |
+| Latence Edge-TTS Andrew | ~700 ms / phrase |
+| Latence pipeline complet PWA → réponse vocale | 2-5 s |
+| Latence exécution TaHoma réelle (volet) | ~1.5 s (mécanique 10-15s) |
+| RAM service jarvis sur VM | ~50 Mo |
+| Tokens / commande simple | 4500 in / 80 out |
+| Tokens / commande composite | 4500 in / 200 out |
+| Coût / commande (OpenRouter) | ~$0.005 |
+| Lignes Python `jarvis-core` ajoutées (session) | ~1800 |
+| Lignes TS `jarvis-cloud` ajoutées (session) | ~1100 |
+| Commits Git GitHub | 14+ |
+
+### 20.3 Bugs identifiés (PRD §19)
+
+| # | Bug | Priorité |
+|---|---|---|
+| 1 | TaHoma `close_garage` ne ferme pas la porte | P0 |
+| 2 | TaHoma `open_gate` n'ouvre pas le portail | P0 |
+| 3 | Mode mains libres instable (Web Speech continuous iOS) | P2 |
+
+### 20.4 État actuel (au 17/05 fin de session)
+
+✅ **Tout en ligne, tout testable depuis le téléphone de Denis :**
+- URL PWA : https://jarvis.creatorsystemia.fr/
+- Identifiant : `denis`
+- Mot de passe : (défini par Denis, dans `.env` VM uniquement)
+- Backend : VM Freebox `192.168.1.142:8765` → exposée publique via `<IP_PUBLIQUE>:48765`
+- n8n DEV : `creatorweb.fr/webhook/jarvis-command` + `creatorweb.fr/webhook/jarvis-login`
+
+### 20.5 À reprendre à la prochaine session — par ordre de priorité
+
+**🔴 P0 (à attaquer EN PREMIER)**
+
+1. **Fix TaHoma close_garage** (§19.1) : inspecter `commandName` exposé par device `881454` (porte garage) en prod, adapter mapping dans `tahoma_agent.py`
+2. **Fix TaHoma open_gate** (§19.2) : idem pour device `16471272` (PORTAIL)
+
+Méthodologie §19.5 : `list_devices` détaillé → noter les `commandName` réels par type de device → construire un mapping `device_type → action → commandName`.
+
+**🟡 P1 (semaine 3 / phase D)**
+
+3. **Rédiger `DEMO_SCRIPT.md`** : 5 scènes pour le Loom plan-séquence (PRD §7.1)
+4. **Répétitions Loom** (10+ passes avant tournage)
+5. **Backup Loom tourné AVANT 2/06** (critère Codex)
+
+**🟢 P2 (bonus si temps)**
+
+6. Mains libres stable (§19.3)
+7. Sous-agent Search Perplexity (§18) — pour répondre "tu connais Bruce Springsteen ?"
+8. Lip-sync amplitude réel sur le mp3 Andrew (Web Audio AnalyserNode)
+
+**🏁 Deadline ferme**
+
+- **30/05** : freeze code (PRD §7 + critères Codex)
+- **2-3/06** : tournage Loom plan-séquence
+- **4/06 minuit** : soumission formulaire Academy
+
+### 20.6 Conseil pour la prochaine session (Anto → Anto futur)
+
+**Avant toute action :**
+1. Lire ce §20 du PRD pour le contexte exhaustif
+2. Vérifier que la stack est encore opérationnelle : `curl https://jarvis.creatorsystemia.fr/` + `https://creatorweb.fr/webhook/jarvis-command` (avec un token de session valide)
+3. Demander à Denis s'il a relu le PRD §17-19 (consigne mémoire)
+4. **Attaquer P0 directement** — pas de nouvelles features avant que close_garage et open_gate fonctionnent en prod
+
+---
+
+*Récap session 17/05 acté. Verrou stratégique du projet (Codex matin) sauté. Stack complète en ligne. Reste 2 bugs P0 + Loom à tourner d'ici le 4 juin.*
