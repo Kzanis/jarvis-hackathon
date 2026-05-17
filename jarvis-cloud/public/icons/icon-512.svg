@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="g" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#06b6d4"/>
+      <stop offset="60%" stop-color="#0e7490"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="80" fill="#020617"/>
+  <circle cx="256" cy="256" r="210" fill="none" stroke="#22d3ee" stroke-width="4" opacity="0.4"/>
+  <circle cx="256" cy="256" r="172" fill="none" stroke="#22d3ee" stroke-width="6"/>
+  <circle cx="256" cy="256" r="120" fill="url(#g)"/>
+  <circle cx="256" cy="256" r="40" fill="#22d3ee"/>
+  <g stroke="#22d3ee" stroke-width="4" opacity="0.7">
+    <line x1="256" y1="20" x2="256" y2="50"/>
+    <line x1="256" y1="462" x2="256" y2="492"/>
+    <line x1="20" y1="256" x2="50" y2="256"/>
+    <line x1="462" y1="256" x2="492" y2="256"/>
+  </g>
+  <text x="256" y="430" text-anchor="middle" fill="#22d3ee" font-family="ui-sans-serif, system-ui" font-size="44" font-weight="700" letter-spacing="6">JARVIS</text>
+</svg>
