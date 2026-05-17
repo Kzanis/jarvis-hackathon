@@ -7,7 +7,9 @@ import { getSession, loginRequest, LoginError } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [username, setUsername] = useState("denis");
+  // SÉCURITÉ : identifiant volontairement vide. Un attaquant doit deviner
+  // l'identifiant ET le mot de passe, pas juste le mot de passe.
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
