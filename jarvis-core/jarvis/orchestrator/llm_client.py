@@ -22,6 +22,7 @@ import json
 import os
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -115,10 +116,37 @@ class LLMOrchestrator:
                 / "prompts"
                 / "personality.md"
             )
-        self._system_prompt = Path(system_prompt_path).read_text(encoding="utf-8")
+        self._system_prompt_base = Path(system_prompt_path).read_text(encoding="utf-8")
 
         # Conversion ToolSpec -> tools API (format OpenAI ou Anthropic selon provider)
         self._tools = self._build_tools(registry.all_tools())
+
+    def _build_system_prompt(self) -> str:
+        """System prompt complet = personality.md + contexte temporel à l'instant T.
+
+        Le contexte temporel est ajouté à chaque appel pour que le LLM puisse
+        répondre quand Denis demande "quelle heure ?" ou "quel jour ?".
+        """
+        try:
+            from zoneinfo import ZoneInfo
+            now_paris = datetime.now(ZoneInfo("Europe/Paris"))
+        except Exception:
+            now_paris = datetime.now()
+
+        jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+        mois = ["janvier", "février", "mars", "avril", "mai", "juin",
+                "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
+        date_str = f"{jours[now_paris.weekday()]} {now_paris.day} {mois[now_paris.month-1]} {now_paris.year}"
+        heure_str = f"{now_paris.hour:02d}h{now_paris.minute:02d}"
+
+        contexte = (
+            "\n\n## Contexte temporel (instant de la requête)\n\n"
+            f"Date du jour : **{date_str}**\n"
+            f"Heure : **{heure_str}** (Europe/Paris)\n\n"
+            "Tu peux répondre directement quand Denis te demande l'heure, la date "
+            "ou le jour. N'invente jamais d'horaires futurs ou passés sans information."
+        )
+        return self._system_prompt_base + contexte
 
     # ------------------------------------------------------------------
     # Construction du client provider-spécifique
@@ -252,7 +280,7 @@ class LLMOrchestrator:
                 max_tokens=self._max_tokens,
                 tools=self._tools,
                 messages=[
-                    {"role": "system", "content": self._system_prompt},
+                    {"role": "system", "content": self._build_system_prompt()},
                     *history,
                 ],
             )
@@ -306,7 +334,7 @@ class LLMOrchestrator:
                 system=[
                     {
                         "type": "text",
-                        "text": self._system_prompt,
+                        "text": self._build_system_prompt(),
                         "cache_control": {"type": "ephemeral"},
                     }
                 ],

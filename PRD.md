@@ -1033,3 +1033,98 @@ TaHoma Switch 192.168.1.69 (réel, mode production à activer ultérieurement)
 ---
 
 *Déploiement effectif acté le 17 mai 2026. Jarvis répond depuis Internet, hébergé sur la Freebox Delta de Denis sans matériel additionnel. Verrou stratégique du projet (Codex dual-review du matin) sauté.*
+
+---
+
+## 18. Sous-agent Search — Recherche externe Web (V2 post-démo)
+
+### 18.1 Cas d'usage
+
+Donner à Jarvis la capacité de **chercher des informations sur Internet en temps réel** pour répondre aux questions qui sortent de son champ domotique/agenda :
+
+- Denis : *« Tu connais Bruce Springsteen ? »* → Jarvis : *« Naturellement Monsieur, l'icône du rock américain, né le 23 septembre 1949 dans le New Jersey. Il a publié 21 albums studio, le plus récent « Only the Strong Survive » en 2022. »*
+- Denis : *« Qui a gagné Roland Garros cette année ? »*
+- Denis : *« Quel est le tarif d'un Macbook Pro M4 ? »*
+- Denis : *« Donne-moi les actualités du jour »*
+- Denis : *« Quel temps va-t-il faire demain à Paris ? »*
+
+### 18.2 Choix du fournisseur
+
+| Fournisseur | Pour | Contre | Coût |
+|---|---|---|---|
+| **Perplexity API** (sonar-pro) | Web search + citations, réponse synthétique, modèle qui sait quand chercher | Coût $5/M tokens output | ~$0.005-0.02/requête |
+| Anthropic Web Search Tool (natif) | Intégration directe Claude, pas de second SDK | Coût Anthropic standard | Inclus dans Haiku/Sonnet |
+| Tavily | Recherche pure, JSON brut à reformuler | Pas de synthèse, à recoller dans le LLM | $0.005/requête |
+| Brave Search API | Résultats bruts | Idem Tavily | Plan gratuit limité |
+
+**Reco V2 : Perplexity API (sonar-pro)** — qualité de synthèse, citations vérifiables, simplicité d'intégration. Coût négligeable à l'usage perso (~$5/mois maximum).
+
+**Alternative défensive** : si Perplexity indisponible, basculer sur **Anthropic Web Search Tool** natif Claude (ajouté à la session tool_use existante, zéro infra supplémentaire).
+
+### 18.3 Architecture (cohérente avec §15)
+
+Nouveau sous-agent `subagents/search_agent.py` :
+
+```
+subagents/
+├─ search_agent.py    ← V2
+│   ├─ tools : search_web, get_news, get_weather
+│   └─ execute : appelle Perplexity API
+```
+
+ToolSpec attendus :
+
+| Tool | Description | Sensibilité |
+|---|---|---|
+| `search_web` | Recherche libre sur un sujet (personnes, faits, définitions, actualités) | safe |
+| `get_weather` | Météo pour une ville donnée | safe |
+| `get_news` | Actualités du jour (filtre catégorie : générale, sport, tech, BTP…) | safe |
+
+### 18.4 Intégration LLM orchestrateur
+
+Le LLM Claude Haiku 4.5 décide automatiquement quand appeler `search_web` :
+
+- Question factuelle externe (« Qui est X ? », « Quel est le prix de Y ? ») → tool_call `search_web`
+- Commande domotique (volet/portail/musique) → sous-agent existant
+- Le LLM peut **combiner** : *« Mets de la musique de Bruce Springsteen »* → search Bruce Springsteen (récupérer top albums) → devialet/play_zone avec hint
+
+### 18.5 Sécurité
+
+Le sous-agent Search ne fait que **lire** Internet, jamais écrire. Niveau `safe` partout :
+- Pas de confirmation orale requise
+- Pas d'élévation contextuelle
+- Logs Audit standard (URL recherchée + résumé reçu)
+- Pas de stockage des réponses au-delà de la session conversationnelle (privacy)
+
+### 18.6 Effort estimé
+
+- Création `search_agent.py` (~120 lignes) : 30 min
+- Tests unitaires + intégration au registry : 30 min
+- Variables d'env (`PERPLEXITY_API_KEY`) + .env.example : 5 min
+- Démo bout-en-bout PWA → search → réponse synthétisée : 30 min
+- **Total V2 : 1h30 à 2h.**
+
+### 18.7 Variables d'env à ajouter
+
+```bash
+# Sous-agent Search — V2
+PERPLEXITY_API_KEY=pplx-...
+SEARCH_PROVIDER=perplexity            # perplexity | anthropic_web_search | tavily
+SEARCH_MAX_RESULTS=5
+SEARCH_TIMEOUT_SECONDS=10
+```
+
+### 18.8 Roadmap V2 mise à jour
+
+| Sous-agent V2 | Effort | Priorité ordre |
+|---|---|---|
+| **Search Web (Perplexity)** | 1h30 | ⭐ 1 — demande Denis 17/05 |
+| Caméras + ALPR | 2j | 2 |
+| Mail Gmail (vrai sous-agent IA) | 3j | 3 |
+| Appels téléphoniques | 3j | 4 |
+| Freebox / TV | 1j | 5 |
+| Lemlist stats | 0.5j | 6 |
+
+---
+
+*Search Web ajouté au plan V2 le 17 mai 2026 (demande Denis : « tu connais Bruce Springsteen »).*
