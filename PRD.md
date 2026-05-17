@@ -1335,3 +1335,49 @@ Méthodologie §19.5 : `list_devices` détaillé → noter les `commandName` ré
 ---
 
 *Récap session 17/05 acté. Verrou stratégique du projet (Codex matin) sauté. Stack complète en ligne. Reste 2 bugs P0 + Loom à tourner d'ici le 4 juin.*
+
+---
+
+## 21. Feature à venir — Alertes tentatives d'intrusion (demande Denis 17/05)
+
+### 21.1 Demande
+
+Denis veut être **informé en cas de tentatives de connexion suspectes** à la PWA Jarvis :
+- Échecs de login répétés (mauvais mot de passe)
+- Échecs de PIN sur commande critique
+- Tentatives d'appel avec token invalide
+- Pic anormal de requêtes depuis une même IP
+
+### 21.2 Comportement attendu
+
+| Événement déclencheur | Action |
+|---|---|
+| 3 échecs login en 5 min | Notification Denis + lock temporaire IP source 15 min |
+| 5 échecs login en 1h | Notification Denis + lock 1h + entrée audit "alerte sécurité" |
+| Token invalide envoyé X fois | Notification Denis |
+| Login réussi depuis nouvelle IP/zone géographique | Notification info Denis |
+
+### 21.3 Canaux de notification possibles
+
+- **Push notification PWA** (Web Push API + service worker) — natif iOS/Android
+- **Email** (via SMTP Hostinger ou Mailgun/Resend gratuit)
+- **Telegram bot** (gratuit, instantané, riche)
+- **SMS** (via Twilio/OVH — payant)
+- **Webhook personnel** (Discord, Slack…)
+
+Reco : démarrer avec **email + Telegram bot** (gratuit, fiable, double canal).
+
+### 21.4 Implémentation côté backend
+
+- Compteur in-memory des échecs par IP source + horodatage
+- Table audit SQLite enrichie avec event_type `security_alert`
+- Background task qui envoie la notification au déclenchement
+- Configuration via env vars : `ALERT_EMAIL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
+
+### 21.5 Priorité
+
+**P2 — Post-démo Loom (V2)**. Pas critique pour le hackathon (4 juin), mais critique pour l'usage quotidien post-démo. À planifier en juin après la soumission.
+
+---
+
+*Demande Denis acté le 17/05/2026 fin de session. Priorité V2.*
