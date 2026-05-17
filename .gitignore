@@ -1,0 +1,118 @@
+# ============================================
+# SECRETS — interdiction absolue de commit
+# ============================================
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+credentials.json
+service_account*.json
+
+# ============================================
+# Données runtime (audit, mocks, caches)
+# ============================================
+data/
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.wal
+*.shm
+audit/*.db
+audit_*.db
+
+# Audio temporaire (TTS, STT)
+tts_*.mp3
+stt_*.wav
+*.mp3
+*.wav
+!demo_*.wav
+!sample_*.wav
+
+# ============================================
+# Python
+# ============================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# ============================================
+# Node / Next.js (jarvis-cloud à venir)
+# ============================================
+node_modules/
+.next/
+out/
+.vercel/
+.turbo/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ============================================
+# Logs
+# ============================================
+*.log
+logs/
+install.log
+
+# ============================================
+# IDE / OS
+# ============================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============================================
+# Spécifique projet Jarvis
+# ============================================
+jarvis-core/data/
+jarvis-core/install.log
+jarvis-core/.pytest_cache/
+
+# Workflow n8n exports temporaires
+n8n-workflows/*.local.json

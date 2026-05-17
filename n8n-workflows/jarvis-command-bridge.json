@@ -1,0 +1,71 @@
+{
+  "name": "Jarvis - Command Bridge",
+  "nodes": [
+    {
+      "id": "webhook_trigger",
+      "name": "Webhook Jarvis",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [240, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "jarvis-command",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "validate_token",
+      "name": "Valider Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Auth simple via Bearer Token. HTTPS protège déjà la transmission.\n// TODO : passer en HMAC quand n8n autorisera 'crypto', via un node Crypto natif.\nconst expectedToken = 'CHANGEZ_MOI_AVEC_VOTRE_TOKEN_DE_32_OCTETS_BASE64URL';\n\nconst raw = $input.first().json;\nconst body = raw.body || raw;\nconst headers = raw.headers || {};\nconst authHeader = headers['authorization'] || headers['Authorization'] || '';\nconst userIdHeader = headers['x-jarvis-user'] || 'unknown';\n\nconst providedToken = authHeader.replace(/^Bearer\\s+/i, '').trim();\nconst valid = providedToken === expectedToken;\n\nif (valid) {\n  return [{ json: {\n    status: 'ok',\n    user_id: userIdHeader,\n    received: body,\n    jarvis_says: 'Bien Monsieur. Ce sera fait.',\n    note: 'Mock — forward vers backend Jarvis local à ajouter quand Cloudflare Tunnel sera prêt.',\n    timestamp: new Date().toISOString()\n  }}];\n}\n\nreturn [{ json: {\n  status: 'unauthorized',\n  reason: !authHeader ? 'header Authorization manquant' : 'token invalide',\n  timestamp: new Date().toISOString()\n}}];"
+      }
+    },
+    {
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [680, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Jarvis": {
+      "main": [
+        [
+          {
+            "node": "Valider Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valider Token": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": []
+}

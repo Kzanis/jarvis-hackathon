@@ -1,0 +1,175 @@
+# ============================================
+# JARVIS — Configuration des devices et scènes
+# Mapping commande vocale ↔ device TaHoma
+# (les secrets restent dans .env, pas ici)
+# ============================================
+
+# --- TAHOMA : mapping des 14 devices pilotables ---
+# Format : nom_logique: { url: "...", type: "...", label_voix: "..." }
+# url = id court de l'URL TaHoma (sans le préfixe protocol://)
+
+tahoma:
+  devices:
+
+    # === VOLETS (8) ===
+    # Synonymes courants : volet, rideau, store intérieur, store, jalousie
+    volet_salon:
+      url: "1454237"
+      type: "Shutter"
+      label_voix: "le volet du salon"
+      aliases: ["volet salon", "volet du séjour", "rideau salon", "rideau du salon", "store salon"]
+
+    volet_cuisine:
+      url: "1857717"
+      type: "Shutter"
+      label_voix: "le volet de la cuisine"
+      aliases: ["volet cuisine", "rideau cuisine", "rideau de la cuisine", "store cuisine"]
+
+    volet_salle_a_manger:
+      url: "11515060"
+      type: "Shutter"
+      label_voix: "le volet de la salle à manger"
+      aliases: ["volet sam", "rideau salle à manger", "rideau sam", "store salle à manger"]
+
+    volet_chambre:
+      url: "1348289"
+      type: "Shutter"
+      label_voix: "le volet de la chambre"
+      aliases: ["volet chambre", "rideau chambre", "rideau de la chambre", "store chambre"]
+
+    volet_bureau:
+      url: "5922177"
+      type: "Shutter"
+      label_voix: "le volet du bureau"
+      aliases: ["rideau bureau", "rideau du bureau", "store bureau"]
+
+    volet_salle_de_bain:
+      url: "7368424"
+      type: "Shutter"
+      label_voix: "le volet de la salle de bain"
+      aliases: ["volet sdb", "rideau salle de bain", "rideau sdb", "store salle de bain"]
+
+    volet_buanderie:
+      url: "1218264"
+      type: "Shutter"
+      label_voix: "le volet de la buanderie"
+      aliases: ["rideau buanderie", "rideau de la buanderie", "store buanderie", "volet lingerie", "rideau cellier"]
+
+    store_banne:
+      url: "6137785"
+      type: "Awning"
+      label_voix: "le store"
+      aliases: ["store banne", "store extérieur", "auvent", "pare-soleil", "voile extérieure"]
+
+    # === OUVERTURES (2) ===
+    portail:
+      url: "16471272"
+      type: "Gate"
+      label_voix: "le portail"
+      aliases: ["barrière", "grille d'entrée", "entrée", "porte d'entrée extérieure"]
+      sensitivity: "sensible"
+
+    porte_garage:
+      url: "881454"
+      type: "GarageDoor"
+      label_voix: "la porte du garage"
+      aliases: ["garage", "porte garage", "porte du garage", "rideau garage"]
+      sensitivity: "sensible"
+
+    # === ALARME (2 zones) ===
+    alarme_zone_1:
+      url: "438974"
+      type: "AlarmZone"
+      label_voix: "la zone 1 de l'alarme"
+      sensitivity: "critique"  # confirmation + PIN
+
+    alarme_zone_2:
+      url: "7745091"
+      type: "AlarmZone"
+      label_voix: "la zone 2 de l'alarme"
+      sensitivity: "critique"
+
+    # === ÉCLAIRAGE (1) ===
+    lampe_telecommandee:
+      url: "16740321"
+      type: "Light"
+      label_voix: "la lampe télécommandée"
+      aliases: ["douille", "lampe"]
+
+  # --- GROUPES (utilisés par les scènes Jarvis) ---
+  groupes:
+    tous_les_volets:
+      - volet_salon
+      - volet_cuisine
+      - volet_salle_a_manger
+      - volet_chambre
+      - volet_bureau
+      - volet_salle_de_bain
+      - volet_buanderie
+
+# --- SCÈNES JARVIS (orchestration directe) ---
+scenes:
+
+  bonjour:
+    description: "Réveil matinal — ouvre tous les volets, désactive l'alarme, brief vocal"
+    sensitivity: "sensible"
+    actions:
+      - { type: "open_group", group: "tous_les_volets" }
+      - { type: "disarm", device: "alarme_zone_1" }
+      - { type: "speak_briefing" }  # mails urgents + agenda
+    voix_jarvis: "Bonjour Monsieur. J'espère que vous avez passé une excellente nuit. Permettez-moi de vous présenter votre journée."
+
+  je_pars:
+    description: "Départ — ferme tous les volets, active l'alarme, ouvre le portail 2 min"
+    sensitivity: "sensible"
+    actions:
+      - { type: "close_group", group: "tous_les_volets" }
+      - { type: "arm", device: "alarme_zone_1" }
+      - { type: "open", device: "portail" }
+      - { type: "wait", seconds: 120 }  # 2 minutes pour sortir avec la voiture
+      - { type: "close", device: "portail" }
+    voix_jarvis: "Très bien Monsieur. À votre retour. Bonne journée."
+
+  mode_cinema:
+    description: "Cinéma — ferme volet salon + volume Freebox max"
+    sensitivity: "safe"
+    actions:
+      - { type: "close", device: "volet_salon" }
+      - { type: "freebox_volume", level: 80 }
+    voix_jarvis: "Place à la projection Monsieur."
+
+  bonne_nuit:
+    description: "Coucher — ferme tous les volets, ferme le store, active l'alarme"
+    sensitivity: "sensible"
+    actions:
+      - { type: "close_group", group: "tous_les_volets" }
+      - { type: "close", device: "store_banne" }
+      - { type: "arm", device: "alarme_zone_1" }
+    voix_jarvis: "Excellente nuit Monsieur. Je veille."
+
+# --- FREEBOX : chaînes favorites (à compléter) ---
+freebox:
+  chaines:
+    tf1: 192
+    france2: 201
+    france3: 202
+    arte: 203
+    canal: 4
+    m6: 6
+  volume_default: 35
+  volume_max_cinema: 80
+  volume_nuit: 15
+
+# --- VISION (S2, désactivé pour l'instant) ---
+vision:
+  enabled: false
+  mode: webcam               # webcam | ftp | rtsp
+  whitelist_plates: []       # plaques autorisées (à remplir si vision activée)
+  cooldown_seconds: 60
+  nuit_alert_start: 22
+  nuit_alert_end: 7
+
+# --- LOG ---
+log:
+  level: INFO
+  pretty: true
