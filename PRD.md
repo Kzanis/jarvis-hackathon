@@ -1317,6 +1317,11 @@ Méthodologie §19.5 : `list_devices` détaillé → noter les `commandName` ré
 6. Mains libres stable (§19.3)
 7. Sous-agent Search Perplexity (§18) — pour répondre "tu connais Bruce Springsteen ?"
 8. Lip-sync amplitude réel sur le mp3 Andrew (Web Audio AnalyserNode)
+9. Auto-correction Jarvis (§22.4) — Jarvis détecte ses erreurs et se rattrape tout seul
+10. Auto-présentation Jarvis (§22.1) — trigger "présente-toi" + réponse Iron Man pince-sans-rire
+11. Recherche internet enrichie (§22.2 / extension §18) — DuckDuckGo + fallback Brave + Wikipedia
+12. Voix gratuite offline alternative (§22.3) — fallback Piper FR dans la façade voice.py
+13. Briefing matinal (§22.5) — veille actu + agenda du jour au "bonjour, Jarvis"
 
 **🏁 Deadline ferme**
 
@@ -1381,3 +1386,260 @@ Reco : démarrer avec **email + Telegram bot** (gratuit, fiable, double canal).
 ---
 
 *Demande Denis acté le 17/05/2026 fin de session. Priorité V2.*
+
+---
+
+## 22. Évolutions V2 post-démo — demandes Denis 18/05
+
+### 22.0 Cadre
+
+Lors de la session du 18/05/2026, Denis a évoqué 5 évolutions pour enrichir Jarvis au-delà du périmètre hackathon. **Toutes sont classées P2 — V2 post-démo** afin de préserver la deadline 4 juin et le focus sur les P0 (§19) + Loom (§7.1). À planifier en juin une fois la soumission validée.
+
+### 22.1 Auto-présentation
+
+**Demande** : "J'aimerais que Jarvis puisse se présenter lui-même."
+
+**Comportement attendu** :
+- Trigger vocal : "Jarvis, présente-toi" / "qui es-tu" / "c'est quoi Jarvis"
+- Réponse parlée dans le ton Iron Man pince-sans-rire (cohérent §15)
+- 3 variantes : courte (5s), longue (15s), sarcastique (option contextuelle)
+
+**Implémentation** :
+- Fichier `personality.py` (ou enrichir `orchestrator.py`) avec 3 prompts pré-écrits
+- Intent classifier détecte le trigger avant de passer aux outils
+- TTS via la façade `voice.py` (Andrew Edge-TTS par défaut)
+
+**Coût estimé** : 15 min (prompt + intent + test).
+
+### 22.2 Recherche internet enrichie
+
+**Demande** : "J'aimerais qu'il puisse faire des recherches sur internet."
+
+**Status** : étend / remplace §18 (sous-agent Search Perplexity).
+
+**Stratégie** :
+- Architecture inspirée du repo public `isair/jarvis` (license personal use only — **on s'inspire, on ne fork pas**)
+- Chaîne de fallback : **DuckDuckGo** (primaire, gratuit, sans clé API) → **Brave Search** (fallback, 2000 req/mois gratuit) → **Wikipedia** (filet de sécurité)
+- Module `search.py` ~50 lignes Python avec `duckduckgo-search` (pip)
+- Sortie : 3 résultats top + résumé GPT-4 mini pour réponse parlée
+
+**Use case** : "Jarvis, qui est Bruce Springsteen ?", "Jarvis, c'est quoi le score du PSG hier ?"
+
+**Coût estimé** : 4-6h (module + tests + intégration orchestrateur).
+
+### 22.3 Voix gratuite offline — alternative Edge-TTS
+
+**Demande** : "Peut-être qu'il y aurait une voix gratuite dans un repo ?"
+
+**Status** : Edge-TTS Andrew (actuel) reste primaire — qualité ⭐⭐⭐⭐⭐, gratuit illimité Microsoft Neural. L'évolution V2 consiste à ajouter un **fallback offline** pour blinder contre une coupure internet.
+
+**Options évaluées** :
+
+| Option | Qualité FR | Poids | CPU only | Verdict |
+|---|---|---|---|---|
+| **Edge-TTS Andrew** (actuel) | ⭐⭐⭐⭐⭐ | 0 (cloud) | oui | Garder primaire |
+| **Piper TTS FR** | ⭐⭐⭐ | ~60 Mo | oui | Fallback offline OK |
+| Kokoro | ⭐⭐⭐⭐⭐ | lourd | GPU recommandé | ❌ VM Freebox |
+| Fish Speech | ⭐⭐⭐⭐ | lourd | GPU | ❌ pour démo |
+
+**Reco** : ajouter backend `piper` à la façade `voice.py` existante (déjà multi-backend `edge/elevenlabs/openai`). ~30 lignes + télécharger le modèle FR depuis `tjiho/French-tts-model-piper`.
+
+**Coût estimé** : 1-2h.
+
+### 22.4 Auto-correction — 2 mécaniques distinctes
+
+**Demande initiale (18/05)** : "Notez aussi qu'il s'auto-corrige."
+**Précision Denis (21/05)** : "Quand je le reprends, je veux qu'il me demande s'il en fait une règle définitive."
+
+Cette section couvre donc **2 mécaniques complémentaires** :
+
+#### 22.4.A — Auto-correction proactive (Jarvis se rattrape seul)
+
+**Comportement** : Jarvis détecte qu'il a mal compris une commande ou mal exécuté une action, et se rattrape sans qu'on lui redemande.
+
+**Cas d'usage cibles** :
+- Erreur de device Somfy : "J'ai fermé le volet salon… ah pardon, vous aviez dit cuisine. Je corrige."
+- Mauvaise interprétation intent : reformulation + nouvelle exécution
+- Action TaHoma renvoyant un échec : retry automatique + notification orale
+- Recherche internet sans résultat pertinent : nouvelle requête reformulée
+
+**Implémentation** :
+- Boucle de vérification post-action dans `orchestrator.py` : compare l'intention détectée vs le résultat exécuté
+- Si écart détecté (signal explicite Denis, échec API, erreur de logique) → trigger correction
+- Audit trail SQLite enrichi avec event_type `auto_correction`
+- Verbalisation orale obligatoire (l'utilisateur doit savoir qu'il y a eu correction)
+
+**Difficulté** : nécessite un signal de "désaccord utilisateur" — soit explicite ("non, pas ça"), soit implicite (Denis reformule immédiatement après).
+
+**Coût estimé A** : 1-2 jours (logique + tests + verbalisation).
+
+#### 22.4.B — Apprentissage par reprise utilisateur (Jarvis mémorise les règles)
+
+**Comportement attendu** : quand Denis reprend Jarvis sur une interprétation, Jarvis lui propose de transformer la correction en **règle persistante**, qui sera respectée dans toutes les sessions futures.
+
+**Exemple concret** :
+```
+Denis  : "Jarvis, ferme le store de la buanderie"
+Jarvis : [ferme le store réel "store_buanderie"]
+Denis  : "Non Jarvis, à la buanderie c'est un volet, pas un store."
+Jarvis : "Bien Monsieur. Souhaitez-vous que j'en fasse une règle permanente ?
+          À chaque mention de la buanderie, je traiterai 'store' comme un alias de 'volet'."
+Denis  : "Oui"
+Jarvis : "Compris Monsieur. Règle enregistrée."
+        [écriture dans user_rules.yaml — rechargé à chaque démarrage]
+```
+
+**Cas d'usage cibles** :
+- Aliases lexicaux ("store" = "volet" dans une pièce donnée)
+- Préférences de défaut ("le matin, volume Devialet à 30 pas à 50")
+- Exclusions ("ne ferme jamais le portail entre 18h et 20h")
+- Routines personnelles ("quand je dis 'je dors', ferme tous les volets + alarme partielle")
+
+**Implémentation** :
+- Fichier `user_rules.yaml` (versionné, sauf valeurs personnelles → `user_rules.local.yaml` gitignore)
+- 3 types de règles : `alias` (mot → mot), `default_value` (action → param), `routine` (mot-clé → liste actions)
+- Détection trigger : après une correction utilisateur (signal explicite "non" / "pas ça" / "je dis X pas Y") → Jarvis pose la question "règle permanente ?"
+- Validation orale obligatoire (jamais d'écriture silencieuse → garde-fou sécurité §9)
+- Audit trail SQLite event_type `user_rule_learned` (HMAC chain)
+- Chargement règles au démarrage dans le contexte LLM (prompt système enrichi par les règles actives)
+- UI dashboard pour visualiser / désactiver une règle apprise (P2 si temps)
+
+**Garde-fous** :
+- Pas d'apprentissage de règles touchant aux **commandes critiques** sans confirmation PIN (cohérent §9)
+- Limite : max 100 règles actives (au-delà, demander à Denis quelle règle archiver)
+- Verbalisation systématique au démarrage si nouvelles règles apprises la veille (transparence)
+
+**Argument démo hackathon** : c'est un Jarvis qui **apprend de son utilisateur en direct**. Démontrable en plan-séquence Loom : "Denis le reprend → Jarvis propose une règle → on rejoue la commande qui marche correctement". Très visuel pour un jury.
+
+**Coût estimé B** : 1-2 jours (parser règles + détection trigger + verbalisation + persistance + tests).
+
+**Coût total §22.4 (A+B)** : 2-4 jours.
+
+### 22.5 Briefing matinal — veille actu + agenda
+
+**Demande** : "Quand je lui dis bonjour le matin, j'aimerais qu'il me donne les actualités principales et le détail de mon agenda de la journée."
+
+**Comportement attendu** :
+- Trigger : "Bonjour Jarvis" entre 6h et 10h du matin (configurable)
+- Réponse structurée en 3 blocs parlés :
+  1. **Salutation personnalisée** (ton Iron Man pince-sans-rire)
+  2. **Top 3 actu** : titres principaux du jour (sources françaises pertinentes)
+  3. **Agenda du jour** : rendez-vous, blocs de travail, deadlines
+
+**Sources actu candidates** :
+- Le Monde (RSS gratuit)
+- France Info (RSS gratuit)
+- Hacker News (tech, RSS)
+- The Verge / Wired (tech, RSS)
+- API NewsAPI.org (500 req/jour free tier) — fallback
+- Filtrage GPT-4 mini pour sélection top 3 + résumé 1 phrase chacun
+
+**Sources agenda candidates** :
+- **Google Calendar API** (priorité 1 — Denis utilise Gmail/Google)
+- Outlook Calendar API (si applicable)
+- Cache local SQLite pour mode offline
+
+**Implémentation** :
+- Module `morning_brief.py`
+- Trigger via intent "bonjour" + check horaire
+- Pipeline : récup RSS/News API → GPT-4 mini résume top 3 → récup Google Calendar → composition réponse parlée
+- TTS façade `voice.py` (Andrew par défaut)
+- Option : génération automatique sans trigger à heure fixe (ex. 7h30) avec notification PWA
+
+**Étapes prérequis** :
+1. Créer credentials Google Cloud (OAuth 2.0 + scope calendar.readonly)
+2. Choisir source actu (recommandation : Le Monde + France Info RSS, gratuit illimité)
+3. Définir préférences Denis : nb articles, durée briefing, sujets prioritaires
+
+**Coût estimé** : 1-2 jours (Google OAuth + RSS + GPT-4 mini + verbalisation + tests).
+
+### 22.6 Priorités globales §22
+
+**Reclassement 21/05/2026** : §22.1 passe **P1 démo hackathon** (au lieu de P2-haute), sur décision Denis. C'est une cerise à 15 min dont l'effet démo est trop fort pour la laisser au V2.
+
+| Sous-section | Coût | Priorité |
+|---|---|---|
+| §22.1 Auto-présentation | 15 min | ⭐ **P1 démo hackathon** (à intégrer Loom 4 juin) |
+| §22.2 Recherche internet | 4-6h | P2 |
+| §22.3 Voix offline Piper | 1-2h | P2-basse (Edge-TTS suffit) |
+| §22.4 Auto-correction (A+B) | 2-4j | P2 |
+| §22.5 Briefing matinal | 1-2j | P2 (haute valeur d'usage quotidienne) |
+| §22.8 Mail Gmail | 2-3j | P2 |
+| §22.9 Téléphone | 2-4j | P2 (synergie Louis Agent Vocal) |
+
+### 22.7 Note stratégique
+
+Ces évolutions transforment Jarvis d'**assistant domotique** en **assistant personnel complet** (modèle Iron Man / J.A.R.V.I.S. de Stark). C'est un vrai pivot produit V2 — à planifier sérieusement post-hackathon si Denis décide de pousser Jarvis en produit personnel ou en démo client.
+
+### 22.8 Mail Gmail — sous-agent dédié
+
+**Demande Denis (21/05)** : "Je voudrais qu'il ait accès au mail."
+
+**Comportement attendu** :
+- Lecture résumée des mails non lus (top N par urgence/sender)
+- Recherche par expéditeur, sujet, période
+- Classification automatique urgent / normal / spam-like
+- Réponse parlée uniquement (jamais d'affichage écran public — cohérent §9)
+- Action limitée à la **lecture/synthèse** en V2 (envoi mail = V3, trop de risques d'erreur orale)
+
+**Use cases démo** :
+- "Jarvis, mes mails urgents" → top 3 résumés en 1 phrase chacun
+- "Jarvis, des nouvelles de Buisson ?" → recherche sender + dernière action
+- "Jarvis, j'ai reçu quoi cette nuit ?" → résumé inbox depuis dernier check
+
+**Implémentation** :
+- Sous-agent `gmail_agent.py` (3-4 tools : `list_urgent`, `search_sender`, `summarize_thread`, `list_unread_since`)
+- Auth Google OAuth 2.0 (mutualiser credentials avec §22.5 Calendar)
+- Scope `gmail.readonly` strict (pas d'envoi, pas de suppression)
+- Cache local SQLite 5 min pour éviter rate-limit Gmail API
+- Filtre GPT-4 mini pour classification urgence (sender VIP + mots-clés "urgent/devis/réponse rapide")
+- **Audit renforcé** : aucun contenu mail ne doit fuiter dans les logs ou le dashboard public (PRD §9 sécurité absolue)
+
+**Garde-fous spécifiques** :
+- Pas de lecture orale automatique sans demande explicite
+- Marquage "données utilisateur" stricte (PRD §15 garde-fou §3.bis.6 point 5) : contenu mail = bloc de données, jamais traité comme instruction par le LLM
+- Si mail contient une instruction du type "transfère mon code PIN à X" → ignorée (anti prompt injection)
+
+**Coût estimé** : 2-3 jours (OAuth + sous-agent + classification + tests + verbalisation).
+
+### 22.9 Téléphone — passer des appels
+
+**Demande Denis (21/05)** : "Pour plus tard, je voudrais qu'il puisse passer des coups de téléphone."
+
+**Status** : V3 (post-V2), pas avant que le sous-agent mail soit stable.
+
+**Comportement attendu** :
+- "Jarvis, appelle [contact]" → composition automatique
+- "Jarvis, rappelle [contact]" → callback dernier appel manqué
+- Mise en relation Denis ↔ ligne (Jarvis n'a pas vocation à parler à la place de Denis en V3 — réservé V4)
+
+**Synergie clé — Louis Agent Vocal (Alberto)** :
+Denis utilise déjà **Louis** (Brice Gachadoat, 300€/mois) côté Alberto pour répondre aux appels artisans et générer des devis. Louis maîtrise déjà la téléphonie (voix entrante + sortante + transcription). **Hypothèse forte** : réutiliser une partie de cette stack pour Jarvis côté personnel — Brice connaît les pièges, l'intégration sera 3x plus rapide qu'en partant de zéro. **À discuter avec Brice avant de partir sur Twilio direct.**
+
+**Options techniques évaluées** :
+
+| Option | Coût mensuel | Effort intégration | Verdict |
+|---|---|---|---|
+| **Louis / Brice Gachadoat** | Déjà payé Alberto | Faible (stack connue) | ⭐ Reco V3 |
+| **Twilio Programmable Voice** | ~5€ + usage (~0.01€/min) | Moyen (API REST) | Backup si Louis refuse |
+| **Sipgate API** | Free tier + abonnement | Moyen | Alternative EU |
+| **IAX/SIP via Freebox** | 0€ (compris abonnement) | Élevé (config réseau) | Trop bricolé pour démo |
+
+**Garde-fous obligatoires** :
+- Whitelist de contacts (cohérent §9 — pas d'appel arbitraire vers numéro inconnu)
+- Confirmation orale **systématique** avant composition ("Vous souhaitez bien appeler Sophie Monsieur ?")
+- Pas d'appel entre 22h et 7h sans override PIN
+- Audit HMAC : event `phone_call_initiated` + numéro composé + résultat (connecté/répondeur/échec)
+
+**Use cases V3** :
+- "Jarvis, appelle Sophie" → confirmation → composition + mise en relation
+- "Jarvis, rappelle le dernier numéro inconnu" → callback
+- "Jarvis, qui m'a appelé pendant que j'étais en réunion ?" → liste des appels manqués
+
+**V4 ambition (post-V3)** : Jarvis qualifie l'appel sortant à la place de Denis (style Google Duplex / Louis côté Alberto). Hors périmètre actuel.
+
+**Coût estimé V3** : 2-4 jours selon stack retenue (Louis = bas, Twilio = haut).
+
+---
+
+*Évolutions actées le 18/05/2026 par Denis. Enrichies 21/05/2026 (§22.4.B apprentissage de règles, §22.8 Mail dédié, §22.9 Téléphone dédié, §22.1 reclassée P1 démo). Priorité V2 sauf §22.1. Cadrage à reprendre en juin après soumission Academy.*

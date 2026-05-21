@@ -116,3 +116,4 @@ jarvis-core/.pytest_cache/
 
 # Workflow n8n exports temporaires
 n8n-workflows/*.local.json
+jarvis-cloud/.env*
