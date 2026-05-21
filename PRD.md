@@ -1139,26 +1139,13 @@ Liste des anomalies remontées par Denis après tests en conditions réelles. **
 
 **Symptôme :** Denis dit « Ferme la porte du garage » → Jarvis répond mais l'action ne s'exécute pas (ou exécution silencieuse sans effet physique).
 
-**Hypothèse forte :** la `_COMMAND_MAP` de `handlers/tahoma.py` mappe `CommandAction.close` → commande Somfy `"close"`. Pour les devices de type `GarageDoor` (et `Gate`), la commande Somfy native peut être différente :
-- `"cycle"` (un seul mouvement bidirectionnel)
-- `"close"` ne pas être exposée si le moteur n'a qu'un cycle ouvert/fermé
-- `"deployment"` pour certains modèles
-
-**À investiguer :**
-1. Inspecter le catalogue retourné par `tahoma.list_devices()` en prod → regarder les `commandName` exposés pour le device `porte garage` (URL `881454`)
-2. Adapter `_COMMAND_MAP` par type de device dans `subagents/tahoma_agent.py` (mapping par `uiClass` ou `type`)
-3. Tester chaque commande supportée sur le vrai device
+**⚠️ Hypothèse initiale INVALIDÉE le 21/05 (voir §19.6).** Le diagnostic du catalogue Somfy montre que le device `porte garage` (`io://<PIN_BOX>/881454`) expose bien la commande `close` (28 commandes au total : `open`, `close`, `stop`, `setClosure`, `up`, `down`...). Le mapping `_COMMAND_MAP` était donc correct. Voir §19.6 pour la nouvelle piste.
 
 ### 19.2 TaHoma — ouverture du portail ne fonctionne pas
 
 **Symptôme :** Denis dit « Ouvre le portail » → Jarvis confirme + tente d'exécuter → portail ne bouge pas.
 
-**Hypothèse :** identique à 19.1. Les devices `Gate` Somfy exposent souvent une commande `cycle` ou `open/close/deployment` selon le modèle. Le mapping générique `open → "open"` peut être inadapté.
-
-**À investiguer :**
-- Faire un `list_devices` détaillé sur la VM et noter le `commandName` exact attendu par le `PORTAIL` (URL `16471272`)
-- Cas particulier : peut-être que le portail demande `cycle` ou une commande paramétrée (`partialOpen` avec valeur)
-- Vérifier les retours HTTP du `exec/apply` côté `TahomaHandler` — éventuelle erreur 400 silencieuse
+**⚠️ Hypothèse initiale INVALIDÉE le 21/05 (voir §19.6).** Le `PORTAIL` (`rts://<PIN_BOX>/16471272`, protocole RTS) expose bien `open`, `close`, `stop`, `up`, `down`. Le mapping est correct. Particularité RTS : protocole **unidirectionnel** (la box envoie le signal radio sans feedback hardware possible). Voir §19.6 pour le diagnostic du 21/05.
 
 ### 19.3 PWA — Mode mains libres (wake word « Jarvis ») non fonctionnel correctement
 
@@ -1193,9 +1180,58 @@ Avant tout autre fix, **inspecter le catalogue Somfy en prod** (commande `list_d
 
 Tester ensuite chaque correctif **device par device** avant de passer au suivant. Pas de regression sur les volets qui fonctionnent (validés 14/05 sur volet buanderie et confirmés 17/05).
 
+### 19.6 Diagnostic 21/05 — résultats du test live sur la VM
+
+**Méthodo §19.5 appliquée.** Inspection du dump `config/tahoma_devices_raw.json` :
+
+| Device | URL | Protocole | Commandes exposées (extraits) |
+|---|---|---|---|
+| `porte garage` | `io://<PIN_BOX>/881454` | IO Home Control (bidirectionnel) | `open`, `close`, `stop`, `setClosure`, `up`, `down`, +22 autres |
+| `PORTAIL` | `rts://<PIN_BOX>/16471272` | RTS (unidirectionnel) | `open`, `close`, `stop`, `up`, `down`, `test`, `rest`, `openConfiguration`, `identify` |
+
+→ **Les commandes `open` et `close` sont bien exposées par les 2 devices.** L'hypothèse §19.1/§19.2 initiale est invalidée.
+
+**Test exécution live (script `scripts/diag_tahoma_exec.py` créé)** :
+
+```
+TEST 1 — PORTAIL command=open
+  HTTP 200, execId=3dba70a3-e7a6-463c-a950-7022693217c6
+  Poll /exec/current/{execId} → body=null instantanément (RTS = pas de feedback)
+
+TEST 2 — porte garage command=close
+  HTTP 200, execId=3855d818-3a2b-47fa-8586-d01c13c1af04
+  Poll /exec/current/{execId} → body=null en moins de 500ms (anormal pour IO)
+  /history/executions → HTTP 400 (mauvais endpoint, à corriger)
+```
+
+**Observations** :
+- La box Somfy **accepte les 2 commandes** sans erreur HTTP
+- Pour le PORTAIL (RTS) : silence du polling **attendu** (le radio unidirectionnel ne renvoie pas de feedback)
+- Pour le GARAGE (IO) : silence **anormal** — on devrait voir `INITIALIZED → IN_PROGRESS → COMPLETED` mais l'execId disparaît immédiatement du `/exec/current`. Soit la commande est rejetée silencieusement par la box, soit l'API Overkiz purge trop vite, soit l'endpoint d'historique est différent (réponse 400)
+
+**Question physique en attente de réponse Denis (chiens dehors au moment du diag, à reprendre quand les chiens sont rentrés)** :
+- 🚪 Le portail a-t-il **bougé physiquement** quand la commande `open` est partie ?
+- 🏠 La porte de garage a-t-elle **bougé physiquement** quand la commande `close` est partie ?
+
+**Hypothèses restantes selon réponse Denis** :
+
+| Réponse Denis | Diagnostic | Fix |
+|---|---|---|
+| **Oui les 2 ont bougé** | Bug Jarvis = on prend déjà le HTTP 200 pour succès mais notre policy/audit ne le verbalise pas correctement, ou l'orchestrateur LLM ne route pas le bon tool | Vérifier orchestrator → tahoma_agent → handler côté logs systemd |
+| **Aucun n'a bougé** | RTS portail : moteur désappairé / hors portée / batterie / bus radio saturé. Garage IO : commande rejetée silencieusement → tester `setClosure 100` à la place | Tests hardware Somfy + alternative `setClosure` pour garage |
+| **Portail oui, garage non** | RTS marche, IO garage a un souci spécifique → tester `setClosure 100` puis `stop` puis `close` séparés | Mapping garage spécifique |
+| **Portail non, garage oui** | Cas le plus probable (RTS fragile) → check télécommande Somfy, refaire un test à 1m du portail | Hardware |
+
+**Patch handler à prévoir indépendamment des résultats** :
+- `handlers/tahoma.py` ligne 197 : ajouter polling `/exec/current/{execId}` pour les devices IO (avec timeout court 2s) afin de remonter le **vrai** statut d'exécution
+- Renvoyer `ExecutionStatus.failure` si l'execId termine sur état `FAILED` ou `CANCELLED`
+- Pour RTS : conserver le comportement actuel (pas de feedback possible par design)
+
+**À reprendre à la prochaine session** : confirmation physique Denis sur portail + garage → application des fix correspondants → re-test.
+
 ---
 
-*Bugs production remontés par Denis le 17 mai 2026. P0 = à corriger en priorité absolue à la reprise.*
+*Bugs production remontés par Denis le 17 mai 2026. P0 = à corriger en priorité absolue à la reprise. Diagnostic 21/05 documenté §19.6, attente confirmation physique Denis.*
 
 ---
 
