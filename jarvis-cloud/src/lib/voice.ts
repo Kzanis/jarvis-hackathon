@@ -182,6 +182,12 @@ export function startHandsFree(options: {
   let paused = false;
   let lastCommandTs = 0;
   let restartTimer: ReturnType<typeof setTimeout> | null = null;
+  // État "armé" : true après détection du mot-clé, en attente de la commande.
+  // Nécessaire car en dictée continue le wake word et la commande arrivent
+  // souvent dans deux résultats finaux séparés.
+  let armed = false;
+  let armTimer: ReturnType<typeof setTimeout> | null = null;
+  const ARM_TIMEOUT_MS = 12_000;
 
   const clearRestart = () => {
     if (restartTimer !== null) {
@@ -189,6 +195,32 @@ export function startHandsFree(options: {
       restartTimer = null;
     }
   };
+
+  const disarm = () => {
+    armed = false;
+    if (armTimer !== null) {
+      clearTimeout(armTimer);
+      armTimer = null;
+    }
+  };
+
+  const arm = () => {
+    armed = true;
+    if (armTimer !== null) clearTimeout(armTimer);
+    armTimer = setTimeout(() => { armed = false; armTimer = null; }, ARM_TIMEOUT_MS);
+    options.onWakeDetected?.();
+  };
+
+  const dispatch = (command: string) => {
+    const now = Date.now();
+    if (now - lastCommandTs < 2000) return; // anti-doublon (iOS répète parfois)
+    lastCommandTs = now;
+    disarm();
+    options.onCommand(command);
+  };
+
+  const cleanCommand = (s: string) =>
+    s.trim().replace(/^[,;.!?:]+/, "").trim();
 
   const buildRecognition = (): SpeechRecognitionLike => {
     const r = new Ctor();
@@ -215,27 +247,29 @@ export function startHandsFree(options: {
     const live = (final + " " + interim).trim();
     if (live) options.onPartial?.(live);
 
-    // Détecte "jarvis [commande]" dans final (déclenche uniquement sur résultat final)
+    // On ne déclenche que sur résultat final (les interims servent à l'affichage).
     if (!final) return;
+
     const match = final.match(WAKE_REGEX);
-    if (!match) return;
 
-    // Tout ce qui suit le wake word = commande
-    const afterIdx = final.toLowerCase().indexOf(match[0].toLowerCase()) + match[0].length;
-    const command = final.slice(afterIdx).trim().replace(/^[,;.!?:]+/, "").trim();
-
-    if (!command || command.length < 2) {
-      // Wake détecté seul → notifier mais ne pas envoyer
-      options.onWakeDetected?.();
+    if (match) {
+      // Le segment final contient le mot-clé : la commande est ce qui suit.
+      const afterIdx =
+        final.toLowerCase().indexOf(match[0].toLowerCase()) + match[0].length;
+      const command = cleanCommand(final.slice(afterIdx));
+      if (command.length >= 2) {
+        dispatch(command); // "OK Jarvis, ferme le garage" en une fois
+      } else {
+        arm(); // "OK Jarvis" seul → on attend la commande à l'énoncé suivant
+      }
       return;
     }
 
-    // Anti-doublon (iOS répète parfois la même final)
-    const now = Date.now();
-    if (now - lastCommandTs < 2000) return;
-    lastCommandTs = now;
-
-    options.onCommand(command);
+    // Pas de mot-clé dans ce segment : s'il fait suite à un réveil, c'est la commande.
+    if (armed) {
+      const command = cleanCommand(final);
+      if (command.length >= 2) dispatch(command);
+    }
   };
 
   const start = () => {
@@ -279,6 +313,7 @@ export function startHandsFree(options: {
     stop: () => {
       active = false;
       clearRestart();
+      disarm();
       try {
         if (recognition) {
           // Neutralise les callbacks avant abort : sur iOS, abort() peut
