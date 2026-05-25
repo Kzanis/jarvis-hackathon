@@ -278,8 +278,14 @@ export function startHandsFree(options: {
       recognition = buildRecognition();
       recognition.onresult = handleResult;
       recognition.onerror = (e) => {
-        if (e.error === "no-speech" || e.error === "audio-capture") {
-          // silence prolongé, on relancera via onend
+        // Erreurs benignes à ignorer : "aborted" est provoqué par NOUS quand on
+        // appelle abort() (pause pendant le TTS, ou stop). "no-speech"/"audio-capture"
+        // = silence prolongé. Dans tous ces cas on laisse onend relancer l'écoute.
+        if (
+          e.error === "no-speech" ||
+          e.error === "audio-capture" ||
+          e.error === "aborted"
+        ) {
           return;
         }
         options.onError?.(`Reco mains libres : ${e.error}`);
