@@ -41,7 +41,7 @@ _SHUTTER_ALIASES: dict[str, str] = {
 }
 
 _AWNING_ALIAS = "store banne"
-_GATE_ALIAS = "Evolvia"  # nouveau moteur portail RTS (rempl. l'ancien "PORTAIL" supprimé)
+_GATE_ALIAS = "Portail"  # moteur RTS "Evolvia" renommé "Portail" dans TaHoma
 _GARAGE_ALIAS = "porte garage"
 _LIGHT_RTS_ALIAS = "Douille télécommandée RTS"
 
@@ -494,7 +494,9 @@ class TahomaAgent:
             return
         devices = await self._executor.list_devices()
         for d in devices:
-            label = d.get("label") or ""
+            # .strip() : TaHoma autorise des espaces parasites dans les labels
+            # (ex: "Portail " avec espace finale) — on normalise pour la résolution.
+            label = (d.get("label") or "").strip()
             url = d.get("url") or d.get("deviceURL") or ""
             if "/" in url:
                 url = url.split("/")[-1]
