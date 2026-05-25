@@ -156,8 +156,30 @@ TOOLS: list[ToolSpec] = [
         domain=DOMAIN,
     ),
     ToolSpec(
+        name="close_gate",
+        description="Ferme le portail extérieur. Action physique sensible.",
+        params_schema={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {},
+        },
+        default_sensitivity=SensitivityLevel.sensible,
+        domain=DOMAIN,
+    ),
+    ToolSpec(
         name="open_garage",
         description="Ouvre la porte de garage. Action physique sensible.",
+        params_schema={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {},
+        },
+        default_sensitivity=SensitivityLevel.sensible,
+        domain=DOMAIN,
+    ),
+    ToolSpec(
+        name="close_garage",
+        description="Ferme la porte de garage. Action physique sensible.",
         params_schema={
             "type": "object",
             "additionalProperties": False,
@@ -332,18 +354,20 @@ class TahomaAgent:
                 correlation_id=correlation_id,
             )
 
-        if invocation.tool_name == "open_gate":
+        if invocation.tool_name in ("open_gate", "close_gate"):
+            action = CommandAction.open if invocation.tool_name == "open_gate" else CommandAction.close
             return DeviceCommand(
                 device_url=_GATE_ALIAS,
-                action=CommandAction.open,
+                action=action,
                 params={},
                 correlation_id=correlation_id,
             )
 
-        if invocation.tool_name == "open_garage":
+        if invocation.tool_name in ("open_garage", "close_garage"):
+            action = CommandAction.open if invocation.tool_name == "open_garage" else CommandAction.close
             return DeviceCommand(
                 device_url=_GARAGE_ALIAS,
-                action=CommandAction.open,
+                action=action,
                 params={},
                 correlation_id=correlation_id,
             )

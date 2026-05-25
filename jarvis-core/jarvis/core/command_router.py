@@ -67,7 +67,9 @@ def _verb_for_tool(tool_name: str) -> str:
     """Verbe naturel français pour la phrase de demande de confirmation."""
     mapping = {
         "open_gate": "ouvrir le portail",
+        "close_gate": "fermer le portail",
         "open_garage": "ouvrir la porte du garage",
+        "close_garage": "fermer la porte du garage",
         "close_all_shutters": "fermer tous les volets",
         "open_all_shutters": "ouvrir tous les volets",
         "open_awning": "déployer le store banne",

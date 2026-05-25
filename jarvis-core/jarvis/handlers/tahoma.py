@@ -188,6 +188,10 @@ class TahomaHandler:
             )
 
         duration_ms = int((time.perf_counter() - start) * 1000)
+        # On considère la commande réussie dès que la box l'accepte (HTTP 200 + execId).
+        # NB : sur l'API locale, l'exécution IO est asynchrone et lente (jusqu'à ~60s
+        # pour le garage). Vérifier le mouvement ici bloquerait la réponse vocale ;
+        # le bon comportement majordome est de confirmer immédiatement la prise en compte.
         return ExecutionResult(
             status=ExecutionStatus.success,
             correlation_id=command.correlation_id,
