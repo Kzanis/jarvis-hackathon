@@ -1679,3 +1679,44 @@ Denis utilise déjà **Louis** (Brice Gachadoat, 300€/mois) côté Alberto pou
 ---
 
 *Évolutions actées le 18/05/2026 par Denis. Enrichies 21/05/2026 (§22.4.B apprentissage de règles, §22.8 Mail dédié, §22.9 Téléphone dédié, §22.1 reclassée P1 démo). Priorité V2 sauf §22.1. Cadrage à reprendre en juin après soumission Academy.*
+
+---
+
+## 23. Récap session 25 mai 2026 (J-10 du 4 juin)
+
+Session intensive de fiabilisation + nouvelle capacité. Tout déployé en prod (backend VM + PWA Hostinger). Repo `Kzanis/jarvis-hackathon`, branche `master`.
+
+### 23.1 P0 §19 — RÉSOLUS
+
+- **Garage « ouvre mais ne ferme pas » = corrigé à la racine.** Cause réelle : l'outil **`close_garage` n'existait pas** dans `tahoma_agent.py` (seul `open_garage` défini) → le LLM ne pouvait jamais demander la fermeture. Ajout de `close_garage` (+ `close_gate` par symétrie), branches `resolve()`, et verbes de confirmation dans `command_router.py`. Niveau sensible conservé (confirmation orale).
+- **Portail = problème MATÉRIEL, pas Jarvis.** L'ancien moteur RTS (`...16471272`, label « PORTAIL ») était mort (Denis ne l'ouvrait même plus à la main). Denis a **supprimé et recréé** un nouveau moteur RTS « Evolvia », **renommé « Portail »** dans TaHoma → `rts://<PIN_BOX>/16471273`, uiClass `Gate`. Code : `_GATE_ALIAS = "Portail"` + `_ensure_url_cache()` fait `.strip()` sur les labels (le label réel est « Portail » avec espace finale). **Portail de nouveau dans la démo.**
+- **Tentative de polling d'exécution abandonnée** : `/exec/current` répond 404 instantané pour les appareils IO et `/history/executions` renvoie 400 → faux négatifs. Handler revenu au modèle simple (succès = HTTP 200). Le `close` réel fonctionne, juste lent (~15-60s, RTS/IO = tirer-et-oublier).
+
+### 23.2 PWA mains libres — fiabilisé (`jarvis-cloud`)
+
+- **Bouton « quitter » réparé** : sur erreur Web Speech (fréquent iOS), `onError` ne coupait pas la boucle → micro actif en fond, UI éteinte, bouton inopérant. Corrigé : `onError` appelle `stop()` + libère le contrôleur ; `stop()`/`pause()` annulent le redémarrage en attente (`clearRestart`) et `stop()` neutralise `onend/onerror/onresult` avant `abort()`.
+- **Erreur « aborted » ignorée** : `abort()` (provoqué par le pause pendant le TTS) levait une erreur traitée comme fatale → mode bloqué en ERROR après chaque commande. Désormais ignorée comme `no-speech` → l'écoute reprend, on **enchaîne les commandes**.
+- **État « armé » pour le mot-clé** : en dictée continue, « OK Jarvis » et la commande arrivent dans deux résultats finaux séparés. Le wake word arme désormais l'agent (timeout 12s) → l'énoncé final suivant = commande. « OK Jarvis, ferme le garage » d'un trait marche aussi.
+- **Accusé vocal « Oui, Monsieur »** : à la détection du mot-clé, Jarvis confirme oralement (voix navigateur locale, instantanée) pour savoir qu'il écoute sans regarder l'écran. Écoute en pause pendant l'accusé puis reprise.
+- Bonus : `jarvis-cloud/src/lib/` était ignoré par git (motif Python `lib/` trop large) → corrigé, désormais versionné.
+
+### 23.3 §18 Sous-agent Search — FAIT (implémentation simplifiée vs §22.2)
+
+- Nouveau `jarvis/subagents/search_agent.py` : outil **`web_search`** qui interroge **OpenRouter avec un modèle Perplexity `sonar` (recherche web)** — réutilise `OPENROUTER_API_KEY`, **aucun compte/clé Perplexity dédié** (plus simple que le plan DuckDuckGo/Brave du §22.2).
+- La réponse de l'outil est **injectée comme phrase parlée** dans `command_router.py` (le LLM planificateur ne connaît pas l'info récente). Réponse **nettoyée pour la voix** (citations `[n]` et markdown supprimés).
+- Steering ajouté dans `personality.md` pour forcer l'usage sur questions factuelles/actualité/météo.
+- Validé end-to-end en vocal (« Canberra », météo Fayence). Limite connue : ambiguïté phonétique (« l'IA » entendu « LiA ») = formulation, pas un bug.
+
+### 23.4 Déploiement — process confirmés
+
+- **Backend** (`jarvis-core`) : `git pull` + `sudo systemctl restart jarvis.service` sur la VM Freebox `192.168.1.142` (`/opt/jarvis`). Healthz `127.0.0.1:8765/healthz`. Dernier HEAD : `049aadd`.
+- **PWA** (`jarvis-cloud`, export statique `out/`) : hébergé **Hostinger**, sous-domaine `jarvis.creatorsystemia.fr`, dossier FTP **`/jarvis/`**. Déploiement par **FTP** (accès dans FileZilla, user `u533834679.creatorsystemia.fr`, host `147.79.103.79`) via `curl --ftp-create-dirs -T`. ⚠️ Le gestionnaire de fichiers web **refuse l'écrasement (409)** et crée un sous-dossier `out/` parasite → **toujours déployer le PWA par FTP**.
+- ⚠️ **Sessions en mémoire** (`_SESSIONS` dans `main.py`) : tout redémarrage du backend **déconnecte le PWA** (401 sur `/intent/text`) → se reconnecter. Le jour J : se logger après le dernier restart.
+- ⚠️ **Sécurité** : le remote git de la VM contient un token GitHub `gho_…` en clair → **à révoquer + reconfigurer**.
+
+### 23.5 Reste à faire (priorité)
+
+- **P1** : DEMO_SCRIPT.md (§7.1) + répétitions + tournage Loom (avant 2-3 juin). §22.1 auto-présentation (P1, 15 min).
+- Migration **PAI v2.4 → v4.0.3** planifiée **après le 4 juin** (sauvegarde `~/.claude` faite le 25/05, rappel mail programmé le 4 juin).
+
+*Récap session 25/05/2026. Jarvis stable et complet : domotique (volets/portail/garage/alarme/store/lampe) + recherche web + mains libres avec mot-clé et accusé vocal. Focus suivant = Loom.*
