@@ -170,6 +170,15 @@ export function CommandComposer() {
       onWakeDetected: () => {
         setHandsFreeStatus("Jarvis vous écoute…");
         setState("listening");
+        // Accusé vocal : permet de savoir qu'il écoute sans regarder l'écran.
+        // On met l'écoute en pause le temps de parler (anti-feedback), puis on
+        // la reprend — l'état "armé" reste actif, la commande suivante est captée.
+        if (isSpeechSynthesisSupported()) {
+          handsFreeCtrl.current?.pause();
+          void speak("Oui, Monsieur.").finally(() => {
+            handsFreeCtrl.current?.resume();
+          });
+        }
       },
       onCommand: (cmd) => {
         setHandsFreeStatus("");
