@@ -41,7 +41,7 @@ _SHUTTER_ALIASES: dict[str, str] = {
 }
 
 _AWNING_ALIAS = "store banne"
-_GATE_ALIAS = "PORTAIL"
+_GATE_ALIAS = "Evolvia"  # nouveau moteur portail RTS (rempl. l'ancien "PORTAIL" supprimé)
 _GARAGE_ALIAS = "porte garage"
 _LIGHT_RTS_ALIAS = "Douille télécommandée RTS"
 
