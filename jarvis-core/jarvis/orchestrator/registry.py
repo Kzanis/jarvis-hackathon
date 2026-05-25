@@ -63,6 +63,7 @@ def build_default_registry() -> SubAgentRegistry:
     """
     from jarvis.subagents.agenda_agent import AgendaAgent
     from jarvis.subagents.devialet_agent import DevialetAgent
+    from jarvis.subagents.search_agent import SearchAgent
     from jarvis.subagents.tahoma_agent import TahomaAgent
 
-    return SubAgentRegistry([TahomaAgent(), DevialetAgent(), AgendaAgent()])
+    return SubAgentRegistry([TahomaAgent(), DevialetAgent(), AgendaAgent(), SearchAgent()])

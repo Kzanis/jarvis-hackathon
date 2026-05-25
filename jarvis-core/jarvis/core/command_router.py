@@ -256,7 +256,17 @@ class CommandRouter:
         self._session.add_assistant(plan.spoken_response, tool_summary)
 
         # 6. Construit le résultat
-        speak = plan.spoken_response or self._fallback_speak(rejection_reason)
+        # Si une recherche web a rapporté une réponse, c'est ELLE que Jarvis prononce
+        # (le LLM planificateur ne connaît pas l'info récente, seul l'outil la ramène).
+        search_answer = next(
+            (
+                e.response.get("answer")
+                for e in executions
+                if e.domain == "search" and e.response.get("answer")
+            ),
+            None,
+        )
+        speak = search_answer or plan.spoken_response or self._fallback_speak(rejection_reason)
         return CommandRouterResult(
             speak=speak,
             executions=executions,
