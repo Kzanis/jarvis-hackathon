@@ -111,6 +111,11 @@ desktop.ini
 # Spécifique projet Jarvis
 # ============================================
 jarvis-core/data/
+
+# Réinclusion : le motif Python "lib/" plus haut ignorait par erreur
+# le code source frontend jarvis-cloud/src/lib/ (voice.ts, api, store…).
+!jarvis-cloud/src/lib/
+!jarvis-cloud/src/lib/**
 jarvis-core/install.log
 jarvis-core/.pytest_cache/
 

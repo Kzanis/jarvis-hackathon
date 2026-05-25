@@ -179,15 +179,22 @@ export function CommandComposer() {
         setHandsFreeStatus(live.length > 80 ? "…" + live.slice(-80) : live);
       },
       onError: (msg) => {
+        // Coupe vraiment la boucle d'écoute, sinon elle redémarre en fond
+        // alors que l'UI croit être éteinte (bouton "quitter" inopérant).
+        handsFreeCtrl.current?.stop();
+        handsFreeCtrl.current = null;
         setError(msg);
         setHandsFreeOn(false);
         setHandsFreeStatus("");
+        if (useJarvis.getState().state === "listening") {
+          useJarvis.getState().setState("idle");
+        }
       },
     });
     if (ctrl) {
       handsFreeCtrl.current = ctrl;
       setHandsFreeOn(true);
-      setHandsFreeStatus("En écoute… dites « Jarvis » pour commencer.");
+      setHandsFreeStatus("En écoute… dites « OK Jarvis » suivi de votre commande.");
       setState("listening");
     }
   };
@@ -267,7 +274,7 @@ export function CommandComposer() {
                 : "border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/10")
             }
             aria-pressed={handsFreeOn}
-            title='Mode mains libres : dites "Jarvis [commande]"'
+            title='Mode mains libres : dites "OK Jarvis, [commande]"'
           >
             {handsFreeOn ? "● Mains libres ON" : "Mains libres"}
           </button>
