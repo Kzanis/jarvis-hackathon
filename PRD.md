@@ -1744,3 +1744,22 @@ Session intensive de fiabilisation + nouvelle capacité. Tout déployé en prod 
 **Reste à faire pour valider de bout en bout** : Denis génère le token (`claude setup-token`), on le met sur la VM, test `claude --bare -p "dis bonjour"`.
 
 **Build (différé)** : sous-agent `dev` → confirmation orale + dossier sandbox + exécution arrière-plan (`claude --bare -p`) + notification vocale. Garde-fous sécurité obligatoires (sandbox only au début).
+
+## 26. Récap session 26 mai 2026 + feuille de route
+
+### Fait aujourd'hui (déployé VM, commits sur master)
+- **TV Freebox** (sous-agent `freebox`) : chaînes par NOM (vraie numérotation box, CNews=14…) + retour TV auto ; volume ; navigation complète (flèches/OK/retour/accueil/guide/lecture-pause) ; **Netflix + YouTube** ; **play_youtube** (dernière vidéo d'un créateur via yt-dlp + cast YouTube Lounge) ; **tv_program** (programme du soir lu depuis l'EPG Freebox). `command_router` généralisé : toute réponse d'outil avec champ `answer` est prononcée.
+- **Agenda Google** (sous-agent `agenda`) : lecture + création via compte de service (agenda s2drenovation@gmail.com partagé). Validé en lecture.
+- **Mail** (sous-agent `mail`) : lecture IMAP Gmail (non-lus + récents), mot de passe d'application. Validé.
+- **Exploration Claude Code** : faisable, moteur installé sur la VM (cf §25).
+
+### Feuille de route (à venir, par envie de Denis)
+- **Afficher de l'info sur l'écran TV** (ex: agenda du jour) : via API Player Freebox `control/open` (ouvre une page web sur la télé). Prérequis = construire l'auth Player (FREEBOX_APP_* déjà en .env) ; incertitude = vérifier que le Player Delta affiche une page web quelconque (à tester). Débloque aussi Prime/Disney+ (§24).
+- **Devialet en réel** : brancher le vrai son (squelette mock existant).
+- **Jarvis → Claude Code** (sous-agent `dev`) : cf §25 (faisable, moteur posé ; reste token + build sandbox/confirmation/async).
+- **Mail — envoi** (SMTP) : écrire/répondre, plus sensible (confirmation).
+- **Agenda — création** : à tester (déjà codé, niveau sensible).
+- **Sous-agents prévus non faits** : caméras, appels (calls), lemlist, alertes intrusion (§21).
+- **Évolutions §22** : auto-présentation, voix offline de secours, auto-correction (rattrapage + mémorisation de règles).
+- **TV à finir (§24)** : Netflix « choisir un film », autres applis (Prime/Disney/Molotov), durcir le relais n8n (« Command Bridge » renvoie vide si l'appel VM échoue).
+- Rappel exploitation : chaque restart backend vide les sessions → reconnexion PWA.
