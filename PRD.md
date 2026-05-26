@@ -1720,3 +1720,13 @@ Session intensive de fiabilisation + nouvelle capacité. Tout déployé en prod 
 - Migration **PAI v2.4 → v4.0.3** planifiée **après le 4 juin** (sauvegarde `~/.claude` faite le 25/05, rappel mail programmé le 4 juin).
 
 *Récap session 25/05/2026. Jarvis stable et complet : domotique (volets/portail/garage/alarme/store/lampe) + recherche web + mains libres avec mot-clé et accusé vocal. Focus suivant = Loom.*
+
+## 24. TV Freebox — fait + à venir (26 mai 2026)
+
+**Fait (sous-agent `freebox`, déployé VM)** : chaînes par nom (vraie numérotation box) + retour TV auto, volume, navigation complète (flèches/OK/retour/accueil/guide/lecture-pause), Netflix + YouTube au lancement, `play_youtube` (dernière vidéo d'un créateur via yt-dlp + cast YouTube Lounge pyytlounge, liaison appairée une fois).
+
+**À venir (demandes Denis, plus tard)** :
+- **Netflix — choisir un film par la voix.** Plus complexe que YouTube (pas de cast type Lounge). Pistes : API Player `control/open` avec lien profond Netflix `https://www.netflix.com/watch/<id>` (deep-link INCERTAIN, à tester) OU navigation ; + source pour résoudre titre→ID Netflix. À explorer.
+- **Autres applis** (Prime Video, Disney+, Molotov) via API Player Freebox OS `control/open` (auth `FREEBOX_APP_*` déjà en .env). Reco Codex thread 019e64d1.
+- **Durcir le relais n8n** « Jarvis - Command Bridge » (`lWH7699zkSGpCqFj`) : le nœud HTTP « Appel Jarvis Freebox » n'a pas de sortie d'erreur → renvoie un corps vide si l'appel VM échoue (ex: session périmée après restart) → PWA `Unexpected end of JSON input`. Ajouter une réponse d'erreur JSON propre + reconnexion auto.
+- Rappel exploitation : tout restart backend vide les sessions → reconnexion PWA obligatoire.
