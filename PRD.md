@@ -1730,3 +1730,17 @@ Session intensive de fiabilisation + nouvelle capacité. Tout déployé en prod 
 - **Autres applis** (Prime Video, Disney+, Molotov) via API Player Freebox OS `control/open` (auth `FREEBOX_APP_*` déjà en .env). Reco Codex thread 019e64d1.
 - **Durcir le relais n8n** « Jarvis - Command Bridge » (`lWH7699zkSGpCqFj`) : le nœud HTTP « Appel Jarvis Freebox » n'a pas de sortie d'erreur → renvoie un corps vide si l'appel VM échoue (ex: session périmée après restart) → PWA `Unexpected end of JSON input`. Ajouter une réponse d'erreur JSON propre + reconnexion auto.
 - Rappel exploitation : tout restart backend vide les sessions → reconnexion PWA obligatoire.
+
+## 25. Exploration — Jarvis pilote Claude Code (26 mai 2026)
+
+**Idée Denis** : parler à Jarvis et lui faire exécuter de vraies tâches d'ordinateur (coder, modifier des projets) via un agent Claude Code derrière, en plus du reste.
+
+**Verdict exploration : FAISABLE.**
+- Moteur **Claude Code CLI 2.1.150 installé sur la VM** (Node 20 via nvm, ARM64). Chemin : `/home/denis/.nvm/versions/node/v20.20.2/bin/claude`.
+- **Auth abonnement (pas de clé API)** : `claude setup-token` (sur PC avec navigateur, login compte Claude) génère un **jeton OAuth valable 1 an** → `CLAUDE_CODE_OAUTH_TOKEN` sur la VM. Exécution non-interactive : `claude --bare -p "..." --output-format json --allowedTools ... --permission-mode ...`. Le SDK Agent Python, lui, exige une clé API → on passe par la **CLI** (subprocess).
+- ⚠️ **CGU** : OAuth abonnement OK pour usage **perso/interne** (Jarvis perso de Denis), PAS pour un produit revendu à des tiers.
+- ⚠️ **Coût** : depuis 15/06/2026, `claude -p`/Agent SDK sur abonnement puisent dans un **crédit mensuel séparé** (Pro 20$ / Max 100-200$). Plafonné, pas à l'usage.
+
+**Reste à faire pour valider de bout en bout** : Denis génère le token (`claude setup-token`), on le met sur la VM, test `claude --bare -p "dis bonjour"`.
+
+**Build (différé)** : sous-agent `dev` → confirmation orale + dossier sandbox + exécution arrière-plan (`claude --bare -p`) + notification vocale. Garde-fous sécurité obligatoires (sandbox only au début).
