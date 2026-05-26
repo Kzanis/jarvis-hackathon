@@ -17,6 +17,9 @@ httpx>=0.27.0
 # Device clients
 devialet>=1.5.7
 # Freebox : appels HTTP direct via requests (pas de lib PyPI fiable côté sync)
+# Freebox TV — play_youtube : recherche vidéo (yt-dlp) + cast YouTube Lounge (pyytlounge)
+yt-dlp>=2024.0.0
+pyytlounge>=3.0.0
 
 # Google APIs
 google-api-python-client>=2.150.0

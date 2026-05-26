@@ -210,6 +210,22 @@ TOOLS: list[ToolSpec] = [
         default_sensitivity=SensitivityLevel.safe, domain=DOMAIN,
     ),
     ToolSpec(
+        name="play_youtube",
+        description=(
+            "Joue une vidéo YouTube sur la télé à partir d'une demande en langage "
+            "naturel. Ex : 'mets la dernière vidéo de Yassine Sdiri' -> "
+            "query='Yassine Sdiri' ; 'lance la vidéo X de la chaîne Y' -> query='X Y'. "
+            "Trouve la vidéo correspondante, ouvre YouTube sur la télé et la lance "
+            "(cast). Par défaut = dernière vidéo du créateur cité."
+        ),
+        params_schema={
+            "type": "object", "additionalProperties": False,
+            "required": ["query"],
+            "properties": {"query": {"type": "string", "minLength": 2, "maxLength": 120}},
+        },
+        default_sensitivity=SensitivityLevel.safe, domain=DOMAIN,
+    ),
+    ToolSpec(
         name="open_app",
         description=(
             "Lance une application sur la télé. Pour l'instant : Netflix et YouTube "
@@ -287,6 +303,15 @@ class FreeboxAgent:
         args: dict[str, Any] = invocation.arguments or {}
         cid = args.get("__correlation_id") or str(uuid.uuid4())
         name = invocation.tool_name
+
+        if name == "play_youtube":
+            query = str(args["query"]).strip()
+            return DeviceCommand(
+                device_url=_PLAYER_URL,
+                action=CommandAction.on,
+                params={"intent": "play_youtube", "query": query, "keys": []},
+                correlation_id=cid,
+            )
 
         if name == "set_channel":
             number = self._resolve_channel(str(args["channel"]))
@@ -381,6 +406,9 @@ class FreeboxAgent:
     # ----------------- execute : DeviceCommand -> ExecutionResult -----------------
 
     async def execute(self, command: DeviceCommand) -> ExecutionResult:
+        if command.params.get("intent") == "play_youtube":
+            return await self._exec_play_youtube(command)
+
         keys: list[str] = command.params.get("keys", [])
         if not keys:
             return self._failure(command, "Aucune touche à envoyer.")
@@ -421,6 +449,39 @@ class FreeboxAgent:
             resp.raise_for_status()
         return int((time.monotonic() - start) * 1000)
 
+    # ----------------- play_youtube : recherche + cast -----------------
+
+    async def _exec_play_youtube(self, command: DeviceCommand) -> ExecutionResult:
+        query = str(command.params.get("query", "")).strip()
+        if not query:
+            return self._failure(command, "Aucun créateur / vidéo demandé.")
+
+        if self._mode != "production" or not self._code:
+            return ExecutionResult(
+                status=ExecutionStatus.success,
+                correlation_id=command.correlation_id,
+                device_url=_PLAYER_URL, action=command.action, duration_ms=0,
+                response={"simulated": True, "intent": "play_youtube", "query": query},
+            )
+        try:
+            video_id, title = await asyncio.to_thread(_find_latest_video, query)
+        except Exception as e:  # noqa: BLE001
+            return self._failure(command, f"Vidéo introuvable pour {query!r} : {type(e).__name__}: {e}")
+        try:
+            # Ouvre l'appli YouTube sur la télé (le cast échoue si elle n'est pas au premier plan),
+            # laisse-lui le temps de démarrer, puis pousse la vidéo.
+            await asyncio.to_thread(self._send_keys_sync, ["youtube"])
+            await asyncio.sleep(_YT_OPEN_DELAY_S)
+            await _cast_video(video_id)
+        except Exception as e:  # noqa: BLE001
+            return self._failure(command, f"Cast YouTube impossible : {type(e).__name__}: {e}")
+        return ExecutionResult(
+            status=ExecutionStatus.success,
+            correlation_id=command.correlation_id,
+            device_url=_PLAYER_URL, action=command.action,
+            response={"intent": "play_youtube", "query": query, "video_id": video_id, "title": title},
+        )
+
     def _failure(self, command: DeviceCommand, error: str) -> ExecutionResult:
         return ExecutionResult(
             status=ExecutionStatus.failure,
@@ -429,6 +490,55 @@ class FreeboxAgent:
             action=command.action,
             error=error,
         )
+
+
+_YT_OPEN_DELAY_S = 6.0  # délai après ouverture de l'appli YouTube avant le cast
+_YT_AUTH_FILE = os.getenv("FREEBOX_YT_AUTH_FILE", "jarvis_yt_auth.json")
+
+
+def _find_latest_video(query: str) -> tuple[str, str]:
+    """Trouve la dernière vidéo d'un créateur/recherche. Retourne (video_id, titre).
+
+    Sans clé API : via yt-dlp. On localise d'abord la chaîne (recherche), puis on
+    prend la 1re vidéo de son onglet /videos (trié du plus récent au plus ancien).
+    """
+    from yt_dlp import YoutubeDL
+
+    opts = {"quiet": True, "no_warnings": True, "extract_flat": True,
+            "skip_download": True, "playlist_items": "1"}
+    with YoutubeDL(opts) as ydl:
+        res = ydl.extract_info(f"ytsearch1:{query}", download=False)
+        entries = (res or {}).get("entries") or []
+        if not entries:
+            raise RuntimeError("aucun résultat YouTube")
+        first = entries[0]
+        channel_url = first.get("channel_url") or first.get("uploader_url")
+        if channel_url:
+            info = ydl.extract_info(channel_url.rstrip("/") + "/videos", download=False)
+            vids = (info or {}).get("entries") or []
+            if vids:
+                v = vids[0]
+                return v["id"], v.get("title", "")
+        # Repli : la vidéo trouvée par la recherche directe
+        return first["id"], first.get("title", "")
+
+
+async def _cast_video(video_id: str) -> None:
+    """Pousse une vidéo sur l'écran YouTube apparié (YouTube Lounge API)."""
+    import json
+
+    from pyytlounge import YtLoungeApi
+
+    with open(_YT_AUTH_FILE, encoding="utf-8") as fh:
+        auth = json.load(fh)
+    async with YtLoungeApi("Jarvis") as api:
+        api.load_auth_state(auth)
+        if not await api.refresh_auth():
+            raise RuntimeError("liaison YouTube expirée (ré-appairage nécessaire)")
+        if not await api.connect():
+            raise RuntimeError("écran YouTube injoignable (appli fermée ?)")
+        if not await api.play_video(video_id):
+            raise RuntimeError("la TV a refusé la lecture")
 
 
 def _clamp_steps(value: Any) -> int:
