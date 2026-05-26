@@ -226,6 +226,16 @@ TOOLS: list[ToolSpec] = [
         default_sensitivity=SensitivityLevel.safe, domain=DOMAIN,
     ),
     ToolSpec(
+        name="tv_program",
+        description=(
+            "Donne le programme télé du soir (ce qui passe en prime-time, vers 21h) "
+            "sur les grandes chaînes, lu depuis le guide de la Freebox. À utiliser pour "
+            "'quel est le programme ce soir ?', 'qu'est-ce qu'il y a à la télé ce soir ?'."
+        ),
+        params_schema={"type": "object", "additionalProperties": False, "properties": {}},
+        default_sensitivity=SensitivityLevel.safe, domain=DOMAIN,
+    ),
+    ToolSpec(
         name="open_app",
         description=(
             "Lance une application sur la télé. Pour l'instant : Netflix et YouTube "
@@ -310,6 +320,14 @@ class FreeboxAgent:
                 device_url=_PLAYER_URL,
                 action=CommandAction.on,
                 params={"intent": "play_youtube", "query": query, "keys": []},
+                correlation_id=cid,
+            )
+
+        if name == "tv_program":
+            return DeviceCommand(
+                device_url=_PLAYER_URL,
+                action=CommandAction.speak,
+                params={"intent": "tv_program", "keys": []},
                 correlation_id=cid,
             )
 
@@ -409,6 +427,9 @@ class FreeboxAgent:
         if command.params.get("intent") == "play_youtube":
             return await self._exec_play_youtube(command)
 
+        if command.params.get("intent") == "tv_program":
+            return await self._exec_tv_program(command)
+
         keys: list[str] = command.params.get("keys", [])
         if not keys:
             return self._failure(command, "Aucune touche à envoyer.")
@@ -482,6 +503,27 @@ class FreeboxAgent:
             response={"intent": "play_youtube", "query": query, "video_id": video_id, "title": title},
         )
 
+    # ----------------- tv_program : programme du soir via guide Freebox -----------------
+
+    async def _exec_tv_program(self, command: DeviceCommand) -> ExecutionResult:
+        if self._mode != "production":
+            answer = ("Ce soir : sur TF1, un divertissement ; sur France 2, un film ; "
+                      "sur M6, une série. (simulation)")
+            return ExecutionResult(
+                status=ExecutionStatus.success, correlation_id=command.correlation_id,
+                device_url=_PLAYER_URL, action=command.action, duration_ms=0,
+                response={"simulated": True, "intent": "tv_program", "answer": answer},
+            )
+        try:
+            answer = await asyncio.to_thread(_fetch_tv_tonight)
+        except Exception as e:  # noqa: BLE001
+            return self._failure(command, f"Guide TV indisponible : {type(e).__name__}: {e}")
+        return ExecutionResult(
+            status=ExecutionStatus.success, correlation_id=command.correlation_id,
+            device_url=_PLAYER_URL, action=command.action,
+            response={"intent": "tv_program", "answer": answer},
+        )
+
     def _failure(self, command: DeviceCommand, error: str) -> ExecutionResult:
         return ExecutionResult(
             status=ExecutionStatus.failure,
@@ -494,6 +536,58 @@ class FreeboxAgent:
 
 _YT_OPEN_DELAY_S = 6.0  # délai après ouverture de l'appli YouTube avant le cast
 _YT_AUTH_FILE = os.getenv("FREEBOX_YT_AUTH_FILE", "jarvis_yt_auth.json")
+
+# Serveur Freebox (le routeur) pour l'API TV/EPG — distinct du Player.
+_SERVER_HOST = os.getenv("FREEBOX_SERVER_HOST", "192.168.1.254")
+_TV_BOUQUET_ID = os.getenv("FREEBOX_TV_BOUQUET_ID", "772")  # bouquet "Freebox TV"
+# Grandes chaînes pour le programme du soir (numéro -> ordre de lecture).
+_TONIGHT_CHANNELS = [1, 2, 3, 5, 6, 7, 9, 10]
+_PRIME_TIME = (21, 10)  # heure locale du prime-time visé
+
+
+def _fetch_tv_tonight() -> str:
+    """Lit le guide Freebox et renvoie une phrase orale du programme de ce soir."""
+    import json
+    import time
+    import urllib.request
+    from datetime import datetime
+
+    def _get(path: str):
+        url = f"http://{_SERVER_HOST}/api/v8/tv/{path}"
+        with urllib.request.urlopen(url, timeout=10) as r:
+            return json.load(r)["result"]
+
+    chans = _get("channels")
+    bouquet = _get(f"bouquets/{_TV_BOUQUET_ID}/channels")
+    num_to_uuid: dict[int, str] = {}
+    for it in bouquet:
+        n, u = it.get("number"), it.get("uuid")
+        if n is not None and u and n not in num_to_uuid:
+            num_to_uuid[n] = u
+
+    now = datetime.now()
+    soir = now.replace(hour=_PRIME_TIME[0], minute=_PRIME_TIME[1], second=0, microsecond=0)
+    t = int(time.mktime(soir.timetuple()))
+    epg = _get(f"epg/by_time/{t}")
+
+    parts: list[str] = []
+    for n in _TONIGHT_CHANNELS:
+        u = num_to_uuid.get(n)
+        if not u:
+            continue
+        name = (chans.get(u, {}) or {}).get("name", "")
+        title = None
+        for p in (epg.get(u, {}) or {}).values():
+            d, dur = p.get("date", 0), p.get("duration", 0)
+            if d <= t < d + dur:
+                title = p.get("title")
+                break
+        if name and title:
+            parts.append(f"sur {name}, {title}")
+
+    if not parts:
+        return "Je ne parviens pas à lire le programme de ce soir, Monsieur."
+    return "Ce soir à la télévision : " + " ; ".join(parts) + "."
 
 
 def _find_latest_video(query: str) -> tuple[str, str]:
