@@ -32,7 +32,10 @@ class MailImapHandler:
                  password: str | None = None) -> None:
         self._host = host or os.getenv("MAIL_IMAP_HOST", _DEFAULT_HOST)
         self._address = address or os.getenv("MAIL_ADDRESS", "")
-        self._password = password if password is not None else os.getenv("MAIL_APP_PASSWORD", "")
+        raw_pwd = password if password is not None else os.getenv("MAIL_APP_PASSWORD", "")
+        # Les mots de passe d'application Google s'affichent par blocs ("abcd efgh ...")
+        # mais doivent être envoyés SANS espaces.
+        self._password = raw_pwd.replace(" ", "").strip()
         self._mode = os.getenv("EXECUTION_MODE", "mock").lower()
 
     async def execute(self, command: DeviceCommand) -> ExecutionResult:
