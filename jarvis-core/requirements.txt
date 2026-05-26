@@ -20,6 +20,9 @@ devialet>=1.5.7
 # Freebox TV — play_youtube : recherche vidéo (yt-dlp) + cast YouTube Lounge (pyytlounge)
 yt-dlp>=2024.0.0
 pyytlounge>=3.0.0
+# Agenda : Google Calendar via compte de service (lecture + écriture)
+google-api-python-client>=2.0.0
+google-auth>=2.0.0
 
 # Google APIs
 google-api-python-client>=2.150.0

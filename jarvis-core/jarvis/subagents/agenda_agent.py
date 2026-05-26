@@ -121,10 +121,10 @@ class AgendaAgent:
     @staticmethod
     def _build_default_executor() -> _AgendaExecutor:
         mode = os.getenv("EXECUTION_MODE", "mock").lower()
-        if mode == "production":
-            # V2 : brancher google-api-python-client + Service Account.
-            # En attendant on retombe sur le mock pour ne jamais bloquer la démo.
-            pass
+        # Réel = production + compte de service Google configuré ; sinon mock.
+        if mode == "production" and os.getenv("GOOGLE_SA_KEY_FILE"):
+            from jarvis.handlers.agenda_google import AgendaGoogleHandler
+            return AgendaGoogleHandler()
         from jarvis.mocks.agenda_mock import AgendaMock
         return AgendaMock()
 
