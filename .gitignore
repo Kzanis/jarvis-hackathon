@@ -125,3 +125,6 @@ jarvis-cloud/.env*
 
 # Liaison cast YouTube (token, ne pas committer)
 jarvis_yt_auth.json
+
+# Cle compte de service Google (agenda) - ne jamais committer
+jarvis_sa.json
