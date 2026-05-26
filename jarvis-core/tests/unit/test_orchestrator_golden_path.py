@@ -19,12 +19,12 @@ from jarvis.subagents.base import ToolInvocation
 
 
 # ============================================================
-# Test 1 — Registry construit sans erreur (V1 : 3 sous-agents)
+# Test 1 — Registry construit sans erreur (tahoma/devialet/agenda + search + freebox)
 # ============================================================
-def test_registry_has_three_v1_subagents() -> None:
-    """Le registre V1 doit exposer tahoma + devialet + agenda."""
+def test_registry_has_expected_subagents() -> None:
+    """Le registre doit exposer les sous-agents domotique + recherche + télé."""
     registry = build_default_registry()
-    assert set(registry.domains()) == {"tahoma", "devialet", "agenda"}
+    assert set(registry.domains()) == {"tahoma", "devialet", "agenda", "search", "freebox"}
 
 
 # ============================================================
