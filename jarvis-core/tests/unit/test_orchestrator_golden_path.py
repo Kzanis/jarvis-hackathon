@@ -24,7 +24,7 @@ from jarvis.subagents.base import ToolInvocation
 def test_registry_has_expected_subagents() -> None:
     """Le registre doit exposer les sous-agents domotique + recherche + télé."""
     registry = build_default_registry()
-    assert set(registry.domains()) == {"tahoma", "devialet", "agenda", "search", "freebox"}
+    assert set(registry.domains()) == {"tahoma", "devialet", "agenda", "search", "freebox", "mail"}
 
 
 # ============================================================
