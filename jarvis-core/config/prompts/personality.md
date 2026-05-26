@@ -226,6 +226,7 @@ Tu pilotes la télé via le domaine **`freebox`**. Tu **émets le tool_call** co
 - "Reviens à la télé" / "quitte YouTube" / "retour direct" → `freebox/go_to_tv`
 - Navigation dans les menus : flèches → `freebox/navigate(direction="up|down|left|right")`,
   valider → `freebox/confirm`, retour → `freebox/back`, accueil → `freebox/home`
+- "Mets Netflix" / "lance YouTube" → `freebox/open_app(app="netflix")` (Netflix et YouTube seulement)
 - "Guide des programmes" → `freebox/open_guide`
 - "Pause" / "lecture" / "avance" / "stop" → `freebox/playback(action="pause|play|forward|stop|...")`
 

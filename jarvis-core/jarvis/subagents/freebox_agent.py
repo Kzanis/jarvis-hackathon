@@ -210,6 +210,20 @@ TOOLS: list[ToolSpec] = [
         default_sensitivity=SensitivityLevel.safe, domain=DOMAIN,
     ),
     ToolSpec(
+        name="open_app",
+        description=(
+            "Lance une application sur la télé. Pour l'instant : Netflix et YouTube "
+            "(touches dédiées). Ex : 'mets Netflix' -> app='netflix', "
+            "'lance YouTube' -> app='youtube'."
+        ),
+        params_schema={
+            "type": "object", "additionalProperties": False,
+            "required": ["app"],
+            "properties": {"app": {"type": "string", "minLength": 2, "maxLength": 32}},
+        },
+        default_sensitivity=SensitivityLevel.safe, domain=DOMAIN,
+    ),
+    ToolSpec(
         name="playback",
         description=(
             "Contrôle la lecture (direct en pause, replay, vidéo) : lecture, pause, stop, "
@@ -230,6 +244,14 @@ TOOLS: list[ToolSpec] = [
 ]
 
 _TOOL_BY_NAME: dict[str, ToolSpec] = {t.name: t for t in TOOLS}
+
+# Applis lançables par touche dédiée du Player (validées HTTP 200).
+# Les autres (Prime, Disney+, Molotov...) nécessiteront l'API Player Freebox OS
+# `control/open` (auth app_token) — non encore implémentée.
+_APP_KEYS: dict[str, str] = {
+    "netflix": "netflix",
+    "youtube": "youtube", "youtub": "youtube", "ytb": "youtube",
+}
 
 # Mapping action playback -> touche télécommande
 _PLAYBACK_KEYS: dict[str, str] = {
@@ -312,6 +334,16 @@ class FreeboxAgent:
 
         if name == "open_guide":
             return self._cmd(CommandAction.on, name, ["list"], cid)
+
+        if name == "open_app":
+            app_key = _normalize(str(args["app"]))
+            key = _APP_KEYS.get(app_key)
+            if key is None:
+                raise ValueError(
+                    f"Appli non disponible : {args['app']!r}. "
+                    f"Pour l'instant je sais lancer : Netflix, YouTube."
+                )
+            return self._cmd(CommandAction.on, name, [key], cid, {"app": key})
 
         if name == "playback":
             key = _PLAYBACK_KEYS[args["action"]]
