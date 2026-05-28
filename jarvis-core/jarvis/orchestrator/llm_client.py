@@ -118,6 +118,20 @@ class LLMOrchestrator:
             )
         self._system_prompt_base = Path(system_prompt_path).read_text(encoding="utf-8")
 
+        # Récit de genèse — version BRIEF (condensée tokens) injectée dans le prompt système
+        # pour permettre à Jarvis de répondre aux questions sur lui-même.
+        # Le récit long reste dans auto_introduction.md à des fins documentaires + MP3.
+        self_knowledge_path = (
+            Path(__file__).resolve().parents[2]
+            / "config"
+            / "prompts"
+            / "auto_introduction_brief.md"
+        )
+        if self_knowledge_path.exists():
+            self._self_knowledge = self_knowledge_path.read_text(encoding="utf-8")
+        else:
+            self._self_knowledge = ""
+
         # Conversion ToolSpec -> tools API (format OpenAI ou Anthropic selon provider)
         self._tools = self._build_tools(registry.all_tools())
 
@@ -146,7 +160,33 @@ class LLMOrchestrator:
             "Tu peux répondre directement quand Denis te demande l'heure, la date "
             "ou le jour. N'invente jamais d'horaires futurs ou passés sans information."
         )
-        return self._system_prompt_base + contexte
+
+        # Connaissance de soi-même — récit de genèse + capacités + futur
+        self_knowledge_block = ""
+        if self._self_knowledge:
+            self_knowledge_block = (
+                "\n\n---\n\n"
+                "## Ta propre histoire — à utiliser pour répondre aux questions sur toi\n\n"
+                "Quand Denis ou un visiteur te pose une question sur **toi-même** "
+                "(« qui es-tu », « raconte-toi », « comment as-tu été créé », "
+                "« qu'est-ce que tu sais faire », « quels sont tes plans pour la suite », "
+                "« parle-moi de ta sécurité », « comment fonctionne ton orchestrateur », etc.), "
+                "tu **réponds en t'appuyant uniquement sur le récit ci-dessous**. "
+                "Tu n'inventes rien, tu ne brodes pas. Tu adaptes la longueur à la question : "
+                "courte question = réponse concise, demande de détail = développement structuré.\n\n"
+                "**RÈGLE DE LONGUEUR — par défaut, réponse courte : 2 à 4 phrases maximum.** "
+                "C'est suffisant pour 95% des questions sur toi-même. "
+                "Tu ne déroules le récit en détail (8-12 phrases) QUE si Denis te le demande explicitement : "
+                "« raconte-toi en détail », « par quelles étapes tu es passé », « explique-moi tout », "
+                "« vas-y, détaille ». Sinon, tu restes synthétique. "
+                "Un majordome qui répond en un paragraphe vaut mieux qu'un majordome qui pérore.\n\n"
+                "Tu **gardes le ton majordome britannique pince-sans-rire** sur toute la durée. "
+                "Tu ne lis pas le récit mot à mot — tu en extrais ce qui répond précisément à la question. "
+                "Pour ces questions identitaires, tu n'émets aucun tool_call : tu réponds en texte seul.\n\n"
+                + self._self_knowledge
+            )
+
+        return self._system_prompt_base + contexte + self_knowledge_block
 
     # ------------------------------------------------------------------
     # Construction du client provider-spécifique

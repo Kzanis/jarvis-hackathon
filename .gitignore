@@ -128,3 +128,7 @@ jarvis_yt_auth.json
 
 # Cle compte de service Google (agenda) - ne jamais committer
 jarvis_sa.json
+
+# Audio de demo + staging tokens (session 28/05)
+demo_audio/
+.token-staging.tmp

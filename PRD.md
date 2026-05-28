@@ -1908,4 +1908,83 @@ Inscrites au pilier V2 "Intendant Énergie" + autres slots :
 - §24 Jarvis sur la TV
 - §21, §22.3-9, §24 reste, sous-agents non faits
 
-*Section ajoutée le 28/05/2026 (Denis avec Anto). Collecte idées V2 close. Bloc 2 acté = option B. Ordre de bataille figé jusqu'à soumission 4/06.*
+### 27.8 Session 28/05 soir — Auto-présentation interactive et apprentissages
+
+**Travail effectué après le verdict Codex (option A retenue)** :
+
+**1. Mise en service de la clé API Anthropic (Bloc 2 prérequis)**
+- Crédit 5 € ajouté sur console.anthropic.com (Denis)
+- Clé API `jarvis-vm-freebox` créée
+- Transportée par pipe SSH vers `/opt/jarvis/jarvis-core/.env` (jamais affichée par Anto, conforme à la règle sécurité absolue)
+- Ancien `CLAUDE_CODE_OAUTH_TOKEN` obsolète supprimé du `.env`
+- Test `claude --bare -p` : OK, réponse en 1,3 s, coût 0,01 €
+- `ANTHROPIC_MODEL=claude-sonnet-4-6` ajouté au `.env` (par défaut)
+
+**2. Pairing Freebox Server validé**
+- Démarche réussie en 10 secondes (Denis a appuyé droite + OK sur le boîtier physique)
+- Token Freebox de 64 caractères transporté par pipe SSH dans `/opt/jarvis/jarvis-core/.env` sous `FREEBOX_APP_TOKEN`
+- Session HMAC validée, receiver Airmedia "Freebox Player" identifié, capabilities `screen+photo+video+audio`
+- Cast vidéo Big Buck Bunny : API répond `success: true` mais la TV repasse sur le dashboard Freebox sans streamer. Streaming d'URL externe HTTPS échoue silencieusement (cf décision Codex option A)
+
+**3. Auto-présentation interactive (bascule décisive)**
+Denis a réfléchi à l'effet wow et a basculé : au lieu d'un audio préenregistré, **Jarvis se présente lui-même en interactif** via le LLM orchestrateur, en s'appuyant sur un récit de genèse stocké comme contexte.
+
+Deux fichiers ont été créés dans `jarvis-core/config/prompts/` :
+- `auto_introduction.md` — récit narratif complet (~378 lignes) : chronique technique (Phase A → pivot → mise en service → sous-agents → PWA mains libres → session 28/05), 4 variantes vocales scriptées (courte / moyenne / longue / sarcastique), indications phonétiques. Sert de **documentation de référence** + **base pour les MP3 préenregistrés de secours**.
+- `auto_introduction_brief.md` — résumé condensé (~140 lignes) : qui tu es, comment tu as été créé, ce que tu sais faire, ce qui arrive en V2, anecdotes, règles de réponse strictes. C'est **ce fichier qui est chargé dans le prompt système** du LLM (économie de tokens).
+
+`jarvis/orchestrator/llm_client.py` patché : chargement du fichier brief au démarrage, injection dans le prompt système avec instructions explicites au LLM (« réponds en t'appuyant uniquement sur le récit, par défaut 2-4 phrases max, déroule en détail uniquement si demandé explicitement, ton majordome britannique, aucun tool_call »).
+
+**4. Mesures et limites identifiées**
+- Test direct backend VM avec « tu peux te présenter » :
+  - Modèle réellement utilisé : **Claude Haiku 4.5** via OpenRouter (la variable `ANTHROPIC_MODEL` n'est pas honorée par OpenRouter — Haiku reste le défaut)
+  - Tokens entrée : **13 584** avec brief (vs 25 110 avec récit complet — économie 46%)
+  - Latence LLM : **6,4 s**
+  - Durée totale (incluant TTS Edge audio ~210 KB en base64) : **20 s**
+- Comportement PWA :
+  - Première question simple « présente-toi » : OK, variante courte affichée et prononcée
+  - Question deuxième « ce que tu sais faire » : `Unexpected end of JSON input` côté PWA, alors que backend a répondu 200 OK
+- **Diagnostic** : timeout côté n8n « Command Bridge » (ou Cloudflare Tunnel) quand la durée totale dépasse ~10-15 s. Le backend marche, c'est le pont qui coupe.
+
+**5. MP3 préenregistrés générés**
+4 fichiers MP3 Edge-TTS voix Andrew (en-US-AndrewMultilingualNeural) générés sur la VM et rapatriés dans `C:\Dev\Hackaton\demo_audio\` :
+- `01-courte.mp3` (~5 s, 40 KB)
+- `02-moyenne.mp3` (~25 s, 152 KB)
+- `03-longue.mp3` (~3-4 min, 1,5 MB)
+- `04-sarcastique.mp3` (~10 s, 87 KB)
+
+Servent de **filet de sécurité** si la version interactive plante en démo, et de **base sonore pour le tutoriel vidéo secondaire** (le narrateur qui raconte l'architecture).
+
+Sous-dossier `phoneme_tests/` avec 7 variantes phonétiques de « Denis Solé » (Andrew vs Henri français) — tests non encore évalués par Denis.
+
+`demo_audio/` et `.token-staging.tmp` ajoutés au `.gitignore`.
+
+### 27.9 État technique à la reprise
+
+**Branche active** : `feature/sprint-final-J7` (créée le 28/05 depuis `master` HEAD `71f6502`)
+
+**Modifications non encore committées (cf §27.9 à dater) à la fermeture de session** :
+- `jarvis-core/jarvis/orchestrator/llm_client.py` (chargement brief)
+- `jarvis-core/config/prompts/auto_introduction.md` (nouveau)
+- `jarvis-core/config/prompts/auto_introduction_brief.md` (nouveau)
+- `.gitignore` (demo_audio + token-staging)
+
+**Sur la VM (/opt/jarvis/jarvis-core/)** :
+- `.env` enrichi : `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL=claude-sonnet-4-6` (non honoré, voir ci-dessus), `FREEBOX_APP_TOKEN` (64 char, pairing réussi)
+- `llm_client.py` patché et déployé
+- `auto_introduction.md` et `auto_introduction_brief.md` déployés
+- Service `jarvis.service` actif et opérationnel
+
+**Bloquant ouvert** :
+- Timeout n8n « Command Bridge » trop court pour les réponses longues (>10-15 s). Solutions identifiées non encore appliquées :
+  1. Augmenter le timeout du nœud HTTP dans n8n (méthode propre, demande accès Denis)
+  2. Réduire encore la longueur des réponses LLM (compromis sur la richesse)
+  3. Streaming SSE (refonte plus lourde)
+
+**Reste à faire pour la démo 4 juin** :
+- Régler le timeout n8n (ou choisir un autre compromis)
+- Implémenter le sous-agent dev Claude Code (Bloc 2 vrai chantier, pas encore commencé)
+- Choisir le scénario démo concret pour Claude Code (sans TV)
+- DEMO_SCRIPT.md + répétitions Loom + tournage + soumission
+
+*Section ajoutée le 28/05/2026 fin de session (Denis avec Anto). Collecte idées V2 close. Bloc 2 acté = option B (Claude Code dev). Auto-présentation interactive développée et déployée mais limitée par timeout n8n. Ordre de bataille figé jusqu'à soumission 4/06.*
