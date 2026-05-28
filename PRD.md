@@ -1745,6 +1745,17 @@ Session intensive de fiabilisation + nouvelle capacité. Tout déployé en prod 
 
 **Build (différé)** : sous-agent `dev` → confirmation orale + dossier sandbox + exécution arrière-plan (`claude --bare -p`) + notification vocale. Garde-fous sécurité obligatoires (sandbox only au début).
 
+### 25.bis — Architecture de déploiement (précision 28/05)
+
+**Usage perso Denis (actuel)** : Claude Code CLI tourne sur la **VM Ubuntu hébergée sur la Freebox Delta** (`/home/denis/.nvm/versions/node/v20.20.2/bin/claude`). La VM tourne H24 — **pas besoin de laisser le PC de bureau allumé**. C'est notre « petit VPS maison » gratuit (compris dans l'abonnement Freebox).
+
+**Usage commercial éventuel (V2, hypothétique)** : si Jarvis devient un produit revendu à un client tiers, il faudra un **VPS dédié** pour ce client (la VM Freebox personnelle de Denis n'est pas multi-tenant). **⚠️ Important** : l'OAuth abonnement Anthropic est limité à un usage perso/interne, **interdit en revente**. Un produit commercial doit basculer sur **clé API Claude** (`ANTHROPIC_API_KEY`), pas sur le token OAuth — facturation à l'usage, pas de plafond mensuel.
+
+| Mode | Hébergement Claude Code | Auth | Coût | Légal revente |
+|---|---|---|---|---|
+| Perso Denis | VM Freebox Delta | `CLAUDE_CODE_OAUTH_TOKEN` (1 an) | Plafond crédit mensuel abonnement | Non concerné (usage perso) |
+| Commercial client | VPS dédié par client | `ANTHROPIC_API_KEY` | Usage réel (token in/out) | ✅ Autorisé |
+
 ## 26. Récap session 26 mai 2026 + feuille de route
 
 ### Fait aujourd'hui (déployé VM, commits sur master)
@@ -1763,3 +1774,138 @@ Session intensive de fiabilisation + nouvelle capacité. Tout déployé en prod 
 - **Évolutions §22** : auto-présentation, voix offline de secours, auto-correction (rattrapage + mémorisation de règles).
 - **TV à finir (§24)** : Netflix « choisir un film », autres applis (Prime/Disney/Molotov), durcir le relais n8n (« Command Bridge » renvoie vide si l'appel VM échoue).
 - Rappel exploitation : chaque restart backend vide les sessions → reconnexion PWA.
+
+---
+
+## 27. Session 28 mai 2026 — Cadrage final J-7 du freeze + pilier V2 « Intendant Énergie »
+
+### 27.1 Contexte
+
+Session de cadrage pré-freeze (freeze code 30/05, tournage Loom 2-3/06, soumission 4/06 minuit). Denis a livré 3 idées nouvelles et rappelé 2 idées déjà actées (§24 et §25). La collecte d'idées est **close**. Cette section consolide le tri V1/V2 et fige l'ordre de bataille jusqu'à la soumission.
+
+### 27.2 Nouvelles idées Denis (28/05)
+
+#### 27.2.A — Chasse aux veilles (économies d'énergie)
+
+**Brief** : Jarvis fait le tour des appareils en veille (écrans PC, TV) et les coupe pour économiser.
+
+**Faisabilité par cible** :
+- TV Freebox : OUI (sous-agent `freebox` déjà en prod)
+- Prises TaHoma / Somfy IO : OUI (sous-agent TaHoma déjà là)
+- PC Windows : complexe (agent local ou SSH ou prise connectée derrière)
+
+**Tri retenu** :
+- **V1 partiel possible (~2h)** : commande vocale "Jarvis, mode économie" → coupe TV Freebox + lampes/prises TaHoma. Décision Bloc 2.
+- **V2 plein scope** : audit nocturne auto + PC + verbalisation détaillée.
+
+#### 27.2.B — Dashboard énergie (élec + chauffage)
+
+**Brief** : agrégation conso élec maison + chauffage avec dashboard (pics, courbes heure/jour/année). Denis a accès portail constructeur chaudière.
+
+**Sources** : Linky/Enedis Data Connect (inscription ~7j), Shelly EM, chaudière (API constructeur ou scraping).
+
+**Effort total** : ~1 semaine de dev pleine.
+
+**Tri retenu** : **V2 net**. Trop gros pour V1 (délai Enedis seul rend la chose impossible avant freeze). Slot vitrine fort sur slide roadmap.
+
+#### 27.2.C — Présence/absence + pilotage chauffage et machines
+
+**Brief** : détection présence + baisse chauffage si absence + remontée à l'arrivée + extension aux machines à laver et autres énergivores.
+
+**Détection présence — meilleure piste** : MAC adresses des téléphones sur Wi-Fi Freebox (API `lan/browser/`), gratuit, instantané, pas d'appli additionnelle.
+
+**Pilotage chauffage** : **Denis confirme thermostat IO Somfy** → passe par TaHoma, sous-agent déjà existant. Ajouter 2-3 outils (`set_thermostat_temperature`, `set_thermostat_mode`) = 0.5j.
+
+**Pilotage machines** : prise connectée Shelly ou TaHoma + programmation heures creuses (V2).
+
+**Effort révisé grâce thermostat IO** :
+- Brique présence Freebox : 1-2j
+- Outils thermostat IO : 0.5j
+- Total brique présence + pilotage chauffage : 2-3j (au lieu de 1-2 semaines initialement)
+- Machines + apprentissage routines : V2
+
+**Tri retenu** :
+- **V1 partiel possible (1-2j)** : brique présence seule ("Jarvis, qui est à la maison ?"). Décision Bloc 2.
+- **V1 étendu possible (2-3j)** : présence + pilotage chauffage IO. Décision Bloc 2 — plus ambitieux mais plus parlant pour démo.
+- **V2 plein scope** : présence + chauffage + machines + apprentissage des routines.
+
+### 27.3 Rappels idées déjà actées au PRD
+
+- **§24 — Jarvis affiche sur l'écran TV** : auth Player FREEBOX_APP_* déjà en .env, à valider que le Player Delta affiche une page web. 1-2j.
+- **§25 — Jarvis connecté à Claude Code** : moteur CLI déjà sur la VM. Reste : Denis génère `CLAUDE_CODE_OAUTH_TOKEN` via `claude setup-token`, puis sous-agent `dev` avec sandbox + confirmation orale + exécution async. 1-2j.
+
+### 27.4 Pilier V2 émergent — « Jarvis Intendant Énergie de la Maison »
+
+Les idées 27.2.A + 27.2.B + 27.2.C forment **un seul récit V2 cohérent** :
+
+1. *Détection des veilles* → coupe ce qui ne sert à rien
+2. *Dashboard temps réel* → tu vois ta conso et tes pics
+3. *Pilotage intelligent par présence* → ta maison s'adapte à ton rythme
+
+Ce pilier sera la **principale slide « What's next »** du repo public et du Loom (final ou tutoriel secondaire). Il transforme les idées non livrées en argument démo plutôt qu'en dette.
+
+### 27.5 Ordre de bataille J-7 du freeze (30/05)
+
+#### Bloc 1 — Non-négociable (à boucler avant J-5)
+
+| Item | Effort | Échéance |
+|---|---|---|
+| §22.1 Auto-présentation | 15 min | 29/05 |
+| Révocation token `gho_` en clair sur le remote git VM (§23.4) | 10 min | 28/05 |
+| `DEMO_SCRIPT.md` 5 scènes / 5 min | 0.5j | 29/05 |
+| Critères freeze Codex (5 mock + 2 réel + test hallucination + test PIN + replay backup) | 1j | 29-30/05 |
+
+#### Bloc 2 — Choix à faire (UNE option max, sinon dérapage)
+
+| Option | Effort | Effet démo | Risque | Reco Anto |
+|---|---|---|---|---|
+| **A. Idée 27.2.A MVP veilles ("mode économie")** | 2h | Moyen | Très faible | Si tu veux du sûr + sympathique |
+| **B. §25 Sous-agent dev Claude Code** | 1-2j (déjà 80%) | ⭐ Très fort (effet wow jury) | Faible | Meilleur effet wow démo |
+| **C. Idée 27.2.C brique présence seule** | 1-2j | Moyen (sans pilotage) | Faible | Prépare le slide V2 vivant |
+| **D. §24 Jarvis affiche sur la TV** | 1-2j | ⭐ Très fort (visuel pur) | Moyen (API Player à valider) | Très parlant si auth Player OK |
+| **E. Idée 27.2.C étendue (présence + chauffage IO)** | 2-3j | ⭐⭐ Très fort | Moyen (consomme tout le bloc 2 + 1j) | Le plus ambitieux, le plus risqué pour la deadline |
+
+**Reco Anto** : option B (Claude Code) — plus fort effet wow pour un jury hackathon Creator Academy, déjà à 80%, risque faible. Option D second choix.
+
+#### Bloc 3 — Non-négociable (à partir de J-5)
+
+| Item | Échéance |
+|---|---|
+| Répétition 1 à blanc | 30/05 |
+| Répétitions 2-3 conditions réelles | 31/05 |
+| Répétitions 4-6 timing optimisé | 1/06 |
+| Tournage Loom (2 prises) | 2-3/06 |
+| README final + screenshots + Loom embed + slide V2 roadmap | 3/06 |
+| Soumission Academy | 4/06 avant minuit |
+
+#### Tout le reste → V2 (slide roadmap)
+
+Idée 27.2.B (dashboard énergie complet), Idée 27.2.C plein scope (présence + chauffage + machines + apprentissage), §21 alertes intrusion, §22.3 voix offline Piper, §22.4 auto-correction (A+B), §22.5 briefing matinal, §22.8 mail envoi, §22.9 téléphone, §24 reste (Netflix choisir film, Prime/Disney/Molotov, durcir relais n8n), tous sous-agents non faits (caméras, appels, lemlist).
+
+### 27.6 Décision Bloc 2 — actée 28/05
+
+**Option B retenue : Sous-agent dev Claude Code (§25)**
+
+Reste à faire :
+1. Denis génère `CLAUDE_CODE_OAUTH_TOKEN` via `claude setup-token` (sur PC avec navigateur, login compte Claude → jeton OAuth valable 1 an)
+2. Token déployé sur la VM Freebox dans `/opt/jarvis/.env`
+3. Test `claude --bare -p "dis bonjour"` sur la VM
+4. Création du sous-agent `dev` (`jarvis/subagents/dev_agent.py`) :
+   - Tool `code_task(prompt, sandbox_path, mode)` → lance `claude --bare -p ... --output-format json --allowedTools ... --permission-mode ...` via subprocess async
+   - Confirmation orale obligatoire (niveau **critique** dans la matrice de sécurité §9)
+   - Dossier sandbox dédié (`/opt/jarvis/sandbox/`) pour éviter toute écriture hors zone
+   - Notification vocale au démarrage ("Bien Monsieur, j'attaque ça") + à la fin ("C'est fait, voici ce que j'ai modifié")
+5. Démo Loom : "Jarvis, ajoute un bouton X dans la sandbox" → confirmation → exécution async → notification vocale du résultat
+
+**Précision déploiement (cf §25.bis)** : moteur déjà sur la VM Freebox, pas besoin de laisser le PC de Denis allumé.
+
+### 27.7 Idées non retenues en V1 — slide V2
+
+Inscrites au pilier V2 "Intendant Énergie" + autres slots :
+- 27.2.A plein scope (audit nocturne + PC)
+- 27.2.B Dashboard énergie complet
+- 27.2.C présence + chauffage + machines + apprentissage
+- §24 Jarvis sur la TV
+- §21, §22.3-9, §24 reste, sous-agents non faits
+
+*Section ajoutée le 28/05/2026 (Denis avec Anto). Collecte idées V2 close. Bloc 2 acté = option B. Ordre de bataille figé jusqu'à soumission 4/06.*
