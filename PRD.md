@@ -410,7 +410,9 @@ Contrainte : tout le matériel physique est chez Denis. Le jury doit pouvoir vé
 - **Split-screen** : téléphone Denis (PWA + avatar HUD) à gauche, caméra maison à droite
 - **Preuve d'authenticité** : horloge live à l'écran + élément aléatoire (météo du jour, dernier message)
 - **Voix off Denis** explique l'architecture pendant l'action
-- **5 scènes enchaînées** : Bonjour → Mes mails urgents → Mode cinéma → Ouvre le portail (vision plaque) → Bonne nuit
+- **5 scènes enchaînées** : Bonjour → Mes mails urgents → Mode cinéma → Ouvre le portail (à la voix) → Bonne nuit
+
+> ℹ️ Décision 29/05 : l'ouverture du portail en démo se fait **à la voix** (fiable, validé le 25/05). La **reconnaissance de plaque** (caméra → portail auto) reste une promesse **V2** (cf. §5.6 et §15.2), pas dans le Loom — chaîne caméra/ALPR jugée trop risquée pour un plan séquence.
 
 ➫ Impossible à faker en plan séquence : la maison qui obéit en direct.
 
