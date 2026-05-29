@@ -1989,4 +1989,44 @@ Sous-dossier `phoneme_tests/` avec 7 variantes phonétiques de « Denis Solé »
 - Choisir le scénario démo concret pour Claude Code (sans TV)
 - DEMO_SCRIPT.md + répétitions Loom + tournage + soumission
 
+---
+
+## 28. Récap session 29 mai 2026 (J-6 du 4 juin)
+
+Session centrée **mise en vitrine pour le jury** + préparation du Loom.
+
+### 28.1 Repo rendu PUBLIC et sécurisé
+- Objectif : règle hackathon = **repo public obligatoire** (PDF règle 02 : vidéo 5 min max en lien ; critère « fonctionne en live, impressionne au premier appui »).
+- Audit secrets : token n8n, PIN box, IP publique trouvés dans `PRD.md` + dumps + historique git.
+- **Historique git réécrit** (`git-filter-repo`, replace-text) : ces 3 secrets → placeholders dans **tous** les commits. Scan post-réécriture = **0 secret**. Force-push.
+- Branche `feature/sprint-final-J7` **fusionnée dans master** puis supprimée.
+- Dumps `tahoma_*_raw.json` **dé-suivis** (topologie maison) + `vm-freebox/` (img 664 Mo) + `*.pdf` ignorés.
+- **Double garde-fou anti-secrets** installé : (1) hook versionné `.githooks/pre-commit` (`core.hooksPath`) ; (2) GitHub Secret Scanning + Push Protection activés.
+- Sauvegarde avant réécriture : `C:\Dev\jarvis-backup-20260529.bundle`.
+- Repo **PUBLIC** : https://github.com/Kzanis/jarvis-hackathon
+
+### 28.2 Constat d'architecture d'auth (important)
+- `JARVIS_N8N_TOKEN` est **inerte** : référencé nulle part dans le code (VM + front). L'auth réelle = **login user/mot de passe** (sessions Bearer en mémoire, `require_session` dans `main.py`).
+- Le **mot de passe de login n'a JAMAIS été dans le repo** (uniquement `.env` VM). Donc rien de critique n'a fuité. Pas de rotation nécessaire.
+
+### 28.3 Décision démo : portail à la voix, plaque en V2
+- Incohérence corrigée (§7.1) : la **reconnaissance de plaque** (caméra → portail auto) était listée dans un vieux scénario démo. Décision actée : **plaque = V2** (risque caméra/ALPR trop élevé pour un plan séquence). En démo, le **portail s'ouvre à la voix** (validé 25/05).
+
+### 28.4 DEMO_SCRIPT.md créé (v2, à valider)
+- `DEMO_SCRIPT.md` : plan séquence 5 min, **6 scènes** couvrant toutes les capacités demandées par Denis :
+  1. Bonjour/identité · 2. Mails + agenda (lecture RDV + **prise de RDV**) · 3. Volets + TV · 4. Portail avec **confirmation sécurité** · 5. Bonne nuit (fermeture volets) · 6. **Jarvis explique lui-même la V2**.
+- Intègre les garde-fous : reconnexion PWA après dernier restart, réponses courtes (timeout n8n), filets MP3, 2 prises, ordre de fiabilité.
+- ⚠️ **Point à tester avant tournage** : la **création de RDV** (écriture agenda, niveau sensible, codée mais non re-validée). Si KO → lecture seule + création en promesse V2.
+
+### 28.5 Hygiène poste
+- Disque C: était **saturé (0 octet)** → nettoyé à **101 Go libres** (TEMP + doublons/installeurs DaVinci obsolètes dans Downloads + corbeille). Vidéos de projets épargnées.
+- Création de ce **CLAUDE.md** projet (conventions Jarvis) + ce récap PRD.
+
+### 28.6 Reprise demain (J-5)
+1. **Valider/peaufiner le DEMO_SCRIPT** (formulations vocales exactes, ton des répliques).
+2. **Tester la prise de RDV** (décider si on la garde en démo).
+3. Décider du sort du **timeout n8n** + éventuel **sous-agent dev Claude Code** (Bloc 2, optionnel vu le temps).
+4. **Répétitions Loom** puis **tournage 2-3/06**, soumission **4/06 minuit**.
+- Optionnel non urgent : resync VM `/opt/jarvis` (historique divergent du distant réécrit) ; nettoyage du token `gho_` en clair sur le remote VM (VM privée → risque faible).
+
 *Section ajoutée le 28/05/2026 fin de session (Denis avec Anto). Collecte idées V2 close. Bloc 2 acté = option B (Claude Code dev). Auto-présentation interactive développée et déployée mais limitée par timeout n8n. Ordre de bataille figé jusqu'à soumission 4/06.*
