@@ -132,3 +132,17 @@ jarvis_sa.json
 # Audio de demo + staging tokens (session 28/05)
 demo_audio/
 .token-staging.tmp
+
+# ============================================
+# Donnees sensibles repo public (session 29/05)
+# ============================================
+# Dumps bruts TaHoma : exposent la topologie maison + le PIN box.
+# Regenerables via scripts/list_tahoma_devices.py / list_tahoma_scenarios.py
+jarvis-core/config/tahoma_devices_raw.json
+jarvis-core/config/tahoma_scenarios_raw.json
+
+# Image VM Ubuntu + seed cloud-init (664 Mo, hors versionnement)
+vm-freebox/
+
+# Brief PDF du hackathon (document tiers, ne pas republier)
+*.pdf
