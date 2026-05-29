@@ -1,0 +1,49 @@
+#!/bin/sh
+# ============================================================
+# Garde-fou anti-secrets — bloque tout commit contenant un
+# secret en dur (cle API, token, mot de passe, cle privee).
+# Active via :  git config core.hooksPath .githooks
+# Contourner un faux positif :  git commit --no-verify
+# ============================================================
+
+# Lignes AJOUTEES par ce commit (tous fichiers stages)
+added="$(git diff --cached --no-color -U0 --diff-filter=ACM | grep '^+' | grep -v '^+++')"
+
+[ -z "$added" ] && exit 0
+
+# On ignore les lignes manifestement non-secretes (placeholders, exemples)
+scan="$(printf '%s\n' "$added" \
+  | grep -viE '(<[A-Z_]+>|xxx+|your[-_]|example|placeholder|redacted|changeme|dummy|\.env\.example)')"
+
+hits=""
+flag() { hits="${hits}$1\n"; }
+
+# --- Jetons a format reconnaissable (valeurs, pas des noms de variables) ---
+printf '%s\n' "$scan" | grep -qE 'sk-ant-[A-Za-z0-9_-]{20,}'        && flag "Cle API Anthropic (sk-ant-...)"
+printf '%s\n' "$scan" | grep -qE 'sk-proj-[A-Za-z0-9_-]{20,}'       && flag "Cle API OpenAI (sk-proj-...)"
+printf '%s\n' "$scan" | grep -qE 'sk-[A-Za-z0-9]{32,}'              && flag "Cle API style OpenAI (sk-...)"
+printf '%s\n' "$scan" | grep -qE 'gh[oprsu]_[A-Za-z0-9]{30,}'       && flag "Token GitHub (gho_/ghp_/...)"
+printf '%s\n' "$scan" | grep -qE 'github_pat_[A-Za-z0-9_]{30,}'     && flag "GitHub fine-grained PAT"
+printf '%s\n' "$scan" | grep -qE 'AKIA[0-9A-Z]{16}'                 && flag "Cle d'acces AWS (AKIA...)"
+printf '%s\n' "$scan" | grep -qE 'xox[baprs]-[A-Za-z0-9-]{10,}'     && flag "Token Slack (xox...)"
+printf '%s\n' "$scan" | grep -qE 'AIza[A-Za-z0-9_-]{30,}'           && flag "Cle API Google (AIza...)"
+printf '%s\n' "$scan" | grep -qE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----' && flag "Cle privee (PEM/OpenSSH/RSA)"
+
+# --- Affectation generique d'un secret en dur (valeur >= 16 caracteres) ---
+printf '%s\n' "$scan" \
+  | grep -qiE '(api[_-]?key|secret|token|passwd|password|bearer|auth)["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"'][A-Za-z0-9_./+=-]{16,}["'"'"']' \
+  && flag "Secret affecte en dur (api_key/token/password = \"...\")"
+
+if [ -n "$hits" ]; then
+  echo "" >&2
+  echo "  COMMIT BLOQUE — secret(s) potentiel(s) detecte(s) :" >&2
+  printf "    - %b" "$hits" >&2
+  echo "" >&2
+  echo "  Mets le secret dans un .env (ignore par git) et reference-le" >&2
+  echo "  par variable d'environnement. Dans les docs, utilise <PLACEHOLDER>." >&2
+  echo "  Faux positif ? Contourne avec :  git commit --no-verify" >&2
+  echo "" >&2
+  exit 1
+fi
+
+exit 0
