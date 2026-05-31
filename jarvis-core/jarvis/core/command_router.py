@@ -76,6 +76,7 @@ def _verb_for_tool(tool_name: str) -> str:
         "arm_alarm": "activer l'alarme",
         "disarm_alarm": "désactiver l'alarme",
         "create_event": "créer ce rendez-vous dans votre agenda",
+        "delete_event": "supprimer ce rendez-vous de votre agenda",
     }
     return mapping.get(tool_name, tool_name.replace("_", " "))
 

@@ -18,11 +18,42 @@
 1. **Dernier redémarrage du service FAIT** → ensuite **NE PLUS redémarrer** (sessions de login en mémoire).
 2. **Se reconnecter au PWA APRÈS ce dernier redémarrage** (sinon jeton périmé → erreur « JSON input »).
 3. Backend : `healthz` → `{status:ok, mode:production}`.
-4. **Devices en position de départ** : portail fermé, volets salon fermés, TV éteinte, lampes éteintes.
+4. **Devices en position de départ** : portail fermé, volets salon fermés, **volet du bureau de Denis OUVERT** (pour le contre-jour du cold open), TV éteinte, lampes éteintes.
 5. **Valider la veille** : lecture mails OK + lecture agenda OK + **création de RDV testée** (sinon scène 2 en lecture seule — voir ⚠️).
 6. **Filet de sécurité** : 4 MP3 Edge-TTS (`demo_audio/`) prêts.
+7. **Lumière de face sur Denis** (cold open) : une source frontale t'éclaire ; la fenêtre derrière = contre-jour. Fermer le volet doit te rendre **net**, pas t'assombrir.
 
 > ⚠️ **Garde-fou réponses longues** : le pont n8n coupe au-delà de ~15 s → commandes à **réponse courte**. Les explications (identité, V2) restent en 2-4 phrases (le prompt système l'impose déjà).
+
+---
+
+## Scène 0 — Cold open : « La lumière » · ~40-50 s
+
+> Plan unique, **pas de cut**. Fenêtre du bureau de Denis derrière lui, volet **ouvert** → fort contre-jour (on le voit mal). **Lumière de face obligatoire** (sinon fermer le volet l'assombrit au lieu de l'éclairer).
+
+| | |
+|---|---|
+| 🎙️ Denis *(plissant les yeux)* | « Bon… franchement, cette lumière en contre-jour, ça ne va pas du tout. On n'y voit rien. » |
+| 🎙️ Denis | « Jarvis ? Ferme le volet **du bureau de Denis**, s'il te plaît. » |
+| 🤖 Jarvis | « Bien, Monsieur. » *(instantané, voix grave)* |
+| 👁️ Écran | Sans coupure : le volet descend, le contre-jour s'efface, le visage de Denis devient net. |
+| 🎙️ Denis *(sourire)* | « … Voilà. Tout de suite mieux. » |
+
+Puis, face caméra (désormais bien éclairé) :
+
+> « Bonjour. Je m'appelle **Denis Solé**. Après 35 ans dans le BTP, j'aide aujourd'hui les artisans et les PME à mettre l'IA au travail, avec Creator System IA. Autant vous dire que le "monde réel" — le chantier, les volets, les portails — c'est mon terrain. »
+>
+> « Ce que vous venez de voir, **ce n'est pas un montage**. C'est Jarvis, l'assistant que j'ai construit pour ce hackathon. Et voici, en deux mots, pourquoi. »
+>
+> *(genèse, court)* « Il y a trois semaines, Tom postait ici même, dans l'Académie : *"L'IoT, une nouvelle opportunité — commencez chez vous."* Sauf que ma maison est **déjà** entièrement domotisée. Je n'avais pas à commencer : je pouvais aller droit au but. Alors quand le hackathon a ouvert sur l'assistant vocal… **c'était tout trouvé.** »
+>
+> « Pas un chatbot de plus qui lit des mails sur un écran. Un majordome qui agit, pour de vrai, sur une vraie maison. Je vous montre. »
+
+**But** : accroche incarnée + **preuve live anti-truquage** (le contre-jour disparaît à l'image) + le "pourquoi" du projet. Le lien du post de Tom est cité dans `MAKING_OF.md` (section Genèse).
+
+> 💡 La Scène 1 ci-dessous (Jarvis se présente) peut être **raccourcie ou fusionnée**, puisque l'identité est déjà posée ici.
+
+> ✅ Commande validée physiquement le 31/05 (« ferme le volet du bureau de Denis » → volet 1218264).
 
 ---
 
@@ -115,6 +146,20 @@
 > ⚠️ Réponse en 2-4 phrases (garde-fou n8n). Filet : MP3 `02-moyenne.mp3` ou slide commentée en voix off.
 
 **But** : Jarvis énonce **lui-même** la vision → ouverture sur le potentiel, renvoi vers le repo/PRD.
+
+---
+
+## Scène 7 — Le mot de la fin · clin d'œil au jury · ~20 s
+
+| | |
+|---|---|
+| 🎙️ Denis | « Jarvis, ça te fait quoi d'être comparé à celui d'Iron Man ? » |
+| 🤖 Jarvis | « Un honneur, Monsieur. La différence ? Lui, il a fallu un milliardaire et un réacteur nucléaire. Moi, juste Denis, une box internet et beaucoup de café — et pourtant, **j'existe vraiment**. Je laisse le jury méditer. » |
+| 🎙️ Denis | *(sourire caméra)* — fin. |
+
+**But** : clôture mémorable + clin d'œil direct au jury, avec l'argument de fond glissé dans la vanne (« j'existe vraiment » = il agit pour de vrai). Réponse **calée dans `personality.md`** (déclencheur : comparaison Iron Man) pour qu'elle tombe juste à chaque prise.
+
+> ⚠️ Court (3-4 phrases) — garde-fou délai n8n.
 
 ---
 

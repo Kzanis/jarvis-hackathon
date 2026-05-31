@@ -78,6 +78,27 @@ TOOLS: list[ToolSpec] = [
         domain=DOMAIN,
     ),
     ToolSpec(
+        name="delete_event",
+        description=(
+            "Supprime un rendez-vous de l'agenda, identifié par son titre "
+            "(title_query) et/ou sa date (date) ou son heure exacte (start). "
+            "Action sensible : une confirmation orale est demandée avant la "
+            "suppression. Ex : title_query='point chantier', date='2026-06-02', "
+            "ou start='2026-06-02T14:00:00'."
+        ),
+        params_schema={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "title_query": {"type": "string", "maxLength": 200},
+                "date": {"type": "string", "format": "date"},
+                "start": {"type": "string", "format": "date-time"},
+            },
+        },
+        default_sensitivity=SensitivityLevel.sensible,
+        domain=DOMAIN,
+    ),
+    ToolSpec(
         name="find_slot",
         description="Trouve un créneau libre d'une certaine durée dans une plage de dates.",
         params_schema={

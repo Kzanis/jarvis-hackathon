@@ -17,6 +17,27 @@ Trois semaines, un seul développeur (Denis Solé) assisté de son IA (Anto). Du
 
 ---
 
+## La genèse — pourquoi la domotique
+
+> Le déclic, et pourquoi ce terrain plutôt qu'un autre.
+
+Comme tous les prestataires IA, je travaille au quotidien sur les mêmes briques que tout le monde : automatiser des e-mails, résumer des documents, extraire de l'information, connecter des outils SaaS. C'est utile — c'est là qu'est la valeur aujourd'hui — mais on finit tous par se ressembler.
+
+Le **10 mai 2026**, Tom Lentebecker publie un post dans le canal *Astuces coachs* de l'Académie : **« L'IoT, une nouvelle opportunité intéressante »**.
+👉 https://iapreneur-academy.circle.so/c/astuces-coachs/l-iot-une-nouvelle-opportunite-interessante
+
+Sa thèse : l'Internet des objets repose sur **exactement les mêmes briques** que nos automatisations IA — des API, des workflows, des dashboards, des LLM — à une différence près : **la donnée vient du monde physique**. Et son conseil pour s'y former tenait en trois mots : **« Commencez chez vous. »** Équipez votre maison de quelques objets connectés, construisez un mini-système, voyez la valeur de vos propres yeux.
+
+En lisant ça, j'ai souri. Parce que **ma maison est déjà entièrement domotisée** : volets, portail, garage, alarme, store, éclairages, chauffage, son — tout piloté par une box Somfy TaHoma et une Freebox Delta. Là où le post invitait les autres à *acheter une ampoule connectée pour débuter*, j'avais déjà le terrain de jeu complet sous la main. Je n'avais pas à commencer : je pouvais viser **le grand bain** directement.
+
+Le déclic était posé : « C'est vrai — j'ai toute la domotique, il faut que je m'y mette pour de bon. »
+
+Quelques semaines plus tard, le **hackathon Académie × Hostinger** ouvre sur le thème *« Assistant personnel IA, vocal, temps réel »*. La rencontre était évidente : **c'était tout trouvé.** Un assistant vocal qui ne se contente pas de lire des e-mails, mais qui **agit physiquement sur une vraie maison**. Jarvis était né.
+
+Détail qui boucle la boucle : l'exemple que donnait Tom — un chauffage de bureau qui se déclenche inutilement, qu'on pourrait piloter selon la présence, la météo et l'heure — c'est **précisément** le pilier de la V2 de Jarvis (« intendant énergie » : chasse aux veilles, suivi de conso, chauffage selon présence). Le post n'a pas seulement déclenché le projet : il en a aussi tracé la suite.
+
+---
+
 ## 1. L'ambition et la contrainte fondatrice
 
 **L'ambition** n'était pas modeste : pas un chatbot qui répond sur un écran, mais un **J.A.R.V.I.S. à la Tony Stark** — un majordome britannique qui agit sur le monde réel, parle naturellement (voix grave, humour pince-sans-rire), et s'utilise en mains libres.

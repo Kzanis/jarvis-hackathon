@@ -77,6 +77,8 @@ class AgendaGoogleHandler:
             return self._list_range(d0, d1)
         if intent == "create_event":
             return self._create(params)
+        if intent == "delete_event":
+            return self._delete(params)
         if intent == "find_slot":
             return self._find_slot(params)
         raise ValueError(f"intent agenda inconnu : {intent!r}")
@@ -135,6 +137,69 @@ class AgendaGoogleHandler:
         e = self._serialize(ev)
         answer = f"C'est noté, Monsieur : {e['titre']}, le {e['jour']} à {e['heure']}."
         return {"intent": "create_event", "event": e, "answer": answer}
+
+    def _candidates(self, params: dict[str, Any]) -> list[dict[str, Any]] | None:
+        """Retourne les événements correspondant aux critères. None = aucun critère fourni."""
+        title_q = (params.get("title_query") or "").strip().lower()
+        has_criteria = bool(title_q or params.get("date") or params.get("start"))
+        if not has_criteria:
+            return None
+
+        sdt: datetime | None = None
+        if params.get("start"):
+            sdt = datetime.fromisoformat(params["start"])
+            if sdt.tzinfo is None:
+                sdt = sdt.replace(tzinfo=self._tz)
+            items = self._fetch(*self._bounds(sdt.date()))
+        elif params.get("date"):
+            day = date.fromisoformat(params["date"])
+            items = self._fetch(*self._bounds(day))
+        else:
+            now = datetime.now(self._tz)
+            items = self._fetch(now - timedelta(days=1), now + timedelta(days=31))
+
+        if title_q:
+            items = [e for e in items if title_q in (e.get("summary", "") or "").lower()]
+
+        if sdt is not None:
+            timed = []
+            for e in items:
+                raw = e.get("start", {}).get("dateTime")
+                if not raw:
+                    continue
+                try:
+                    edt = datetime.fromisoformat(raw)
+                except ValueError:
+                    continue
+                if edt.tzinfo is None:
+                    edt = edt.replace(tzinfo=self._tz)
+                if edt.hour == sdt.hour and edt.minute == sdt.minute:
+                    timed.append(e)
+            if timed:
+                items = timed
+        return items
+
+    def _delete(self, params: dict[str, Any]) -> dict[str, Any]:
+        cands = self._candidates(params)
+        if cands is None:
+            return {"intent": "delete_event", "deleted": None,
+                    "answer": "Précisez quel rendez-vous supprimer, Monsieur — son titre ou sa date."}
+        if not cands:
+            return {"intent": "delete_event", "deleted": None,
+                    "answer": "Je ne trouve aucun rendez-vous correspondant, Monsieur."}
+        if len(cands) > 1:
+            bits = []
+            for e in cands[:5]:
+                s = self._serialize(e)
+                bits.append(f"{s['titre']} le {s['jour']} à {s['heure']}")
+            return {"intent": "delete_event", "deleted": None, "ambiguous": True,
+                    "answer": "J'ai trouvé plusieurs rendez-vous : " + " ; ".join(bits)
+                              + ". Lequel dois-je supprimer, Monsieur ?"}
+        ev = cands[0]
+        self._svc().events().delete(calendarId=self._calendar_id, eventId=ev.get("id")).execute()
+        s = self._serialize(ev)
+        return {"intent": "delete_event", "deleted": s,
+                "answer": f"C'est supprimé, Monsieur : {s['titre']}, le {s['jour']} à {s['heure']}."}
 
     def _find_slot(self, params: dict[str, Any]) -> dict[str, Any]:
         dur = timedelta(minutes=int(params["duration_minutes"]))

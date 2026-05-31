@@ -127,6 +127,36 @@ class AgendaMock:
             self._events.append(new)
             return self._ok(command, start, {"event": self._serialize(new)})
 
+        if intent == "delete_event":
+            tq = (command.params.get("title_query") or "").strip().lower()
+            has_crit = bool(tq or command.params.get("date") or command.params.get("start"))
+            if not has_crit:
+                return self._ok(command, start, {"deleted": None,
+                    "answer": "Précisez quel rendez-vous supprimer, Monsieur."})
+            cands = list(self._events)
+            if command.params.get("start"):
+                sdt = datetime.fromisoformat(command.params["start"])
+                cands = [e for e in cands if e["start"].date() == sdt.date()]
+                timed = [e for e in cands
+                         if e["start"].hour == sdt.hour and e["start"].minute == sdt.minute]
+                if timed:
+                    cands = timed
+            elif command.params.get("date"):
+                dd = date.fromisoformat(command.params["date"])
+                cands = [e for e in cands if e["start"].date() == dd]
+            if tq:
+                cands = [e for e in cands if tq in e["title"].lower()]
+            if not cands:
+                return self._ok(command, start, {"deleted": None,
+                    "answer": "Aucun rendez-vous correspondant, Monsieur."})
+            if len(cands) > 1:
+                return self._ok(command, start, {"deleted": None, "ambiguous": True,
+                    "answer": "Plusieurs rendez-vous correspondent, Monsieur. Précisez le titre ou l'heure."})
+            ev = cands[0]
+            self._events = [e for e in self._events if e["id"] != ev["id"]]
+            return self._ok(command, start, {"deleted": self._serialize(ev),
+                "answer": f"C'est supprimé, Monsieur : {ev['title']}."})
+
         if intent == "find_slot":
             slot = self._find_slot(
                 duration_minutes=int(command.params["duration_minutes"]),
