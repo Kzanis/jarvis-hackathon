@@ -24,7 +24,10 @@ DOMAIN = "tahoma"
 
 
 # ------------------------------------------------------------------
-# Mapping nom logique (LLM) -> device label (TaHoma)
+# Mapping nom logique (LLM) -> identifiant device TaHoma.
+# La valeur est SOIT un label TaHoma (résolu en URL au runtime via list_devices),
+# SOIT un ID Somfy court et STABLE (cas des deux bureaux : insensible au
+# renommage du volet dans l'appli Somfy/TaHoma).
 # Source : devices déclarés dans jarvis/mocks/tahoma_mock.py (17 devices).
 # Les clefs sont normalisées (sans accents, minuscules, sans espaces).
 # ------------------------------------------------------------------
@@ -34,10 +37,17 @@ _SHUTTER_ALIASES: dict[str, str] = {
     "sallemanger": "Volet salle a manger",
     "salleamanger": "Volet salle a manger",
     "chambre": "volet chambre",
-    "bureau": "volet bureau",
+    # Les deux bureaux -> ID Somfy STABLE (et non label), pour rester corrects
+    # même si le volet est renommé dans l'appli Somfy.
+    #   1218264 = bureau de Denis  (ex-buanderie, validé 14/05 — volet du cold open)
+    #   5922177 = bureau de Muriel (ex-"bureau")
+    "bureaudedenis": "1218264",
+    "bureaudemuriel": "5922177",
     "salledebain": "volet salle de bain",
     "sdb": "volet salle de bain",
-    "buanderie": "volet buanderie",
+    # Rétro-compatibilité : anciens noms encore acceptés -> même ID stable.
+    "buanderie": "1218264",
+    "bureau": "5922177",
 }
 
 _AWNING_ALIAS = "store banne"
@@ -80,7 +90,10 @@ TOOLS: list[ToolSpec] = [
         name="open_shutter",
         description=(
             "Ouvre un volet roulant désigné par son nom logique "
-            "(buanderie, salon, cuisine, chambre, bureau, salle_de_bain, salle_a_manger)."
+            "(bureau_de_denis, bureau_de_muriel, salon, cuisine, chambre, "
+            "salle_de_bain, salle_a_manger). "
+            "« le bureau de Denis » -> bureau_de_denis ; "
+            "« le bureau de Muriel » -> bureau_de_muriel."
         ),
         params_schema={
             "type": "object",
@@ -95,7 +108,13 @@ TOOLS: list[ToolSpec] = [
     ),
     ToolSpec(
         name="close_shutter",
-        description="Ferme un volet roulant désigné par son nom logique.",
+        description=(
+            "Ferme un volet roulant désigné par son nom logique "
+            "(bureau_de_denis, bureau_de_muriel, salon, cuisine, chambre, "
+            "salle_de_bain, salle_a_manger). "
+            "« le bureau de Denis » -> bureau_de_denis ; "
+            "« le bureau de Muriel » -> bureau_de_muriel."
+        ),
         params_schema={
             "type": "object",
             "additionalProperties": False,
