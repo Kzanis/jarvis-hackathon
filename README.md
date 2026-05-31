@@ -16,7 +16,9 @@ Jarvis est un majordome IA qui :
 
 ## 🎬 Démo
 
-*Vidéo Loom 5 min à venir — soumission le 4 juin 2026.*
+**🎥 Présentation du projet (< 5 min)** → https://youtu.be/OB42MOhmvXk
+
+**🎬 Démo complète — Jarvis pilote la vraie maison, en direct** → https://youtu.be/QZAmOG7IwMk
 
 ![architecture](docs/architecture.png)
 
