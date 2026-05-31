@@ -711,7 +711,7 @@ Si présélectionné pour le meetup du 19 juin :
 - Latence E2E mock : 3 ms moyenne après optimisations (×340 plus rapide qu'initial 1017 ms)
 
 **Validation physique :**
-- Volet buanderie ouvert et fermé en vrai via `demo_volet_buanderie.py` (testé devant Brice en visio)
+- Volet buanderie ouvert et fermé en vrai via `demo_volet_buanderie.py`
 
 **Workflow n8n :**
 - `Jarvis - Command Bridge` ID `lWH7699zkSGpCqFj` actif sur creatorweb.fr DEV
@@ -1691,7 +1691,7 @@ Session intensive de fiabilisation + nouvelle capacité. Tout déployé en prod 
 ### 23.1 P0 §19 — RÉSOLUS
 
 - **Garage « ouvre mais ne ferme pas » = corrigé à la racine.** Cause réelle : l'outil **`close_garage` n'existait pas** dans `tahoma_agent.py` (seul `open_garage` défini) → le LLM ne pouvait jamais demander la fermeture. Ajout de `close_garage` (+ `close_gate` par symétrie), branches `resolve()`, et verbes de confirmation dans `command_router.py`. Niveau sensible conservé (confirmation orale).
-- **Portail = problème MATÉRIEL, pas Jarvis.** L'ancien moteur RTS (`...16471272`, label « PORTAIL ») était mort (Denis ne l'ouvrait même plus à la main). Denis a **supprimé et recréé** un nouveau moteur RTS « Evolvia », **renommé « Portail »** dans TaHoma → `rts://<PIN_BOX>/16471273`, uiClass `Gate`. Code : `_GATE_ALIAS = "Portail"` + `_ensure_url_cache()` fait `.strip()` sur les labels (le label réel est « Portail » avec espace finale). **Portail de nouveau dans la démo.**
+- **Portail = problème de PARAMÉTRAGE matériel, pas Jarvis.** Le moteur du portail était **neuf** (posé par l'installateur sous garantie, suite à un souci antérieur au hackathon) mais **mal paramétré au niveau de sa carte mère**, donc mal déclaré dans TaHoma. Denis a **corrigé le réglage lui-même** + redéclaré proprement le moteur RTS, renommé « Portail » dans TaHoma (uiClass `Gate`). Code : `_GATE_ALIAS = "Portail"` + `_ensure_url_cache()` fait `.strip()` sur les labels (le label réel a une espace finale). **Portail de nouveau dans la démo.**
 - **Tentative de polling d'exécution abandonnée** : `/exec/current` répond 404 instantané pour les appareils IO et `/history/executions` renvoie 400 → faux négatifs. Handler revenu au modèle simple (succès = HTTP 200). Le `close` réel fonctionne, juste lent (~15-60s, RTS/IO = tirer-et-oublier).
 
 ### 23.2 PWA mains libres — fiabilisé (`jarvis-cloud`)
@@ -2030,3 +2030,40 @@ Session centrée **mise en vitrine pour le jury** + préparation du Loom.
 - Optionnel non urgent : resync VM `/opt/jarvis` (historique divergent du distant réécrit) ; nettoyage du token `gho_` en clair sur le remote VM (VM privée → risque faible).
 
 *Section ajoutée le 28/05/2026 fin de session (Denis avec Anto). Collecte idées V2 close. Bloc 2 acté = option B (Claude Code dev). Auto-présentation interactive développée et déployée mais limitée par timeout n8n. Ordre de bataille figé jusqu'à soumission 4/06.*
+
+---
+
+## 29. Récap session 30 mai 2026 (J-5 du 4 juin)
+
+> ⚠️ **TOUT ce qui suit est sur disque mais NON commité** (consigne Denis : on ne commit rien pour l'instant). Entièrement réversible.
+
+### 29.1 Mode cinéma — redéfini et déployé sur la VM
+- Déclencheurs : « mode cinéma », « on regarde un film », « lance le cinéma », « c'est l'heure du film », « ambiance cinéma ».
+- Action : **3 volets** (salon, salle_a_manger, cuisine) via `set_shutter_position closure_percent: 90` = presque fermés, **lames juste entrouvertes** (un filet de jour passe). Ne touche **ni TV ni son**. (`personality.md` → section « Scènes — commandes groupées ».)
+- **Déployé** sur la VM (`/opt/jarvis/jarvis-core/config/prompts/personality.md`) + `systemctl restart jarvis.service` (actif, healthz OK port 8765). Sauvegarde VM : `personality.md.bak-20260530`.
+- **Vérifié côté cerveau** : `LLMOrchestrator.plan_in_conversation` renvoie les **3 bons appels** pour les 3 formulations testées. Le feature **fonctionne**.
+
+### 29.2 Correctif voix kit mains-libres (« voix de femme » sur mobile)
+- **Cause** : l'accusé « Oui Monsieur » et les réponses passaient par la synthèse **navigateur** (voix système → féminine sur tél) car l'audio Andrew était bloqué par l'autoplay mobile.
+- **Corrections** (`jarvis-cloud/src/lib/voice.ts` + `components/CommandComposer.tsx`) :
+  - Accusé « Oui Monsieur » → **MP3 Andrew** (`public/oui-monsieur.mp3`, généré via edge-tts `en-US-AndrewMultilingualNeural`).
+  - Voix féminine « amélie » retirée de la liste de repli.
+  - **Déblocage audio mobile** : un seul élément `<audio>` amorcé lors de l'appui « mains libres » (`unlockAudio()`), réutilisé pour l'accusé **et** les réponses → autoplay mobile autorisé.
+- Build OK + **déployé sur Hostinger** (FTP, dossier `/jarvis/`, **70/70 fichiers**). En ligne, vérifié (HTTPS 200, mp3 `audio/mpeg`).
+
+### 29.3 Diagnostic mains-libres mobile — décision
+- Cerveau parfait, mais la **reconnaissance vocale du navigateur mobile** (Web Speech continu) est instable : voix différente selon l'appareil + commandes déformées → Jarvis « confus ».
+- **Décision** : sur **téléphone = appui-micro** (fiable) ; **démo / tournage Loom = PC en mains libres** (le plus stable). Mains libres sur tél = à éviter pour la démo.
+- **Piste V1.1** (post-hackathon) : router l'audio du tél vers **Whisper backend** (`/intent/audio_full`) pour une transcription fiable sur mobile.
+
+### 29.4 Cartographie déploiement (apprise aujourd'hui)
+- **Backend** : VM `ssh denis@192.168.1.142`, `jarvis.service` (uvicorn `jarvis.main:app` port **8765**), prompts `/opt/jarvis/jarvis-core/config/prompts/`. Restart **vide les sessions** → reconnecter le PWA.
+- **PWA front** `jarvis.creatorsystemia.fr` = **hébergement web Hostinger** (≠ VPS), FTP `147.79.103.79:21`, user `u533834679.creatorsystemia.fr`, **dossier `/jarvis/`**. Identifiant dans FileZilla (« Creator system IA »). Pas de service worker. Déploiement = build `out/` (export statique Next.js) → FTP.
+- **VPS** `srv754116.hstgr.cloud` = **n8n uniquement** (≠ front). Sa clé d'hôte SSH a changé (3 clés régénérées) → probable réinstallation, à vérifier dans hPanel un jour (non bloquant).
+
+### 29.5 Reste à faire (prochaine session)
+1. **Tester appui-micro « mode cinéma » sur le tél** (Denis) — confirme que les 3 volets bougent (⚠️ mode production = vrais volets).
+2. **Décider quoi committer** : tout en attente dans l'arbre (docs portail v2 confirmée, n8n assaini, MAKING_OF, mode cinéma, correctif voix) — rien commité.
+3. DEMO_SCRIPT à valider, répétitions, **tournage 2-3/06**, **soumission 4/06 minuit**.
+
+*Section ajoutée le 30/05/2026 (Denis avec Anto). Mode cinéma + correctif voix déployés (VM + Hostinger), non commités. Décision : tél = appui-micro, démo = PC.*

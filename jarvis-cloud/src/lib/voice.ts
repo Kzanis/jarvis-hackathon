@@ -105,8 +105,10 @@ function pickBestFrenchVoice(): SpeechSynthesisVoice | null {
   if (!all.length) return null;
 
   const fr = all.filter((v) => v.lang.toLowerCase().startsWith("fr"));
-  // Préférence : Thomas (iOS), Paul, Daniel (masculin), puis Google français, puis n'importe quelle fr.
-  const preferred = ["thomas", "paul", "daniel", "henri", "google français", "amélie"];
+  // Préférence : voix MASCULINES fr-FR uniquement (Thomas iOS, Paul/Daniel/Henri),
+  // puis Google français en dernier recours. On ne met PAS de voix féminine ici :
+  // sinon le repli navigateur (sur mobile surtout) sort une voix de femme.
+  const preferred = ["thomas", "paul", "daniel", "henri", "google français"];
   for (const name of preferred) {
     const match = fr.find((v) => v.name.toLowerCase().includes(name));
     if (match) {
@@ -335,32 +337,86 @@ export function startHandsFree(options: {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Lecture audio mobile-safe.
+// Sur mobile, l'autoplay est interdit hors d'un geste utilisateur. On utilise
+// donc UN SEUL élément <audio>, "débloqué" au moment d'un tap (bouton mains
+// libres). Une fois cet élément amorcé, la lecture programmatique ultérieure
+// (accusé Andrew + réponses du backend) est autorisée, y compris quand elle est
+// déclenchée par la détection vocale et non par un appui.
+// ---------------------------------------------------------------------------
+let sharedAudio: HTMLAudioElement | null = null;
+
+function getSharedAudio(): HTMLAudioElement {
+  if (!sharedAudio) sharedAudio = new Audio();
+  return sharedAudio;
+}
+
+/**
+ * À appeler DANS un geste utilisateur (tap sur « mains libres »/micro) pour
+ * débloquer l'autoplay sur mobile. Joue brièvement l'accusé en muet puis le
+ * remet à zéro — l'élément partagé est dès lors autorisé à rejouer seul.
+ */
+export function unlockAudio(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const a = getSharedAudio();
+    a.src = "/oui-monsieur.mp3";
+    a.muted = true;
+    const p = a.play();
+    if (p && typeof p.then === "function") {
+      p.then(() => {
+        a.pause();
+        a.currentTime = 0;
+        a.muted = false;
+      }).catch(() => {
+        a.muted = false;
+      });
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Joue une source audio sur l'élément partagé (débloqué). */
+function playOnShared(src: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const a = getSharedAudio();
+    a.muted = false;
+    a.onended = () => resolve();
+    a.onerror = () => reject(new Error("Lecture audio échouée."));
+    a.src = src;
+    const p = a.play();
+    if (p && typeof p.then === "function") p.catch((e) => reject(e));
+  });
+}
+
 /**
  * Joue un mp3 fourni en base64 (généré par Edge-TTS Andrew côté backend).
- * Résout quand la lecture est terminée.
+ * Passe par l'élément partagé débloqué pour fonctionner sur mobile.
+ * Résout à la fin, rejette en cas d'échec (le repli Web Speech est géré en amont).
  */
 export function playBase64Audio(
   base64: string,
   mime: string = "audio/mpeg"
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (typeof window === "undefined") {
-      resolve();
-      return;
-    }
-    try {
-      const audio = new Audio(`data:${mime};base64,${base64}`);
-      audio.onended = () => resolve();
-      audio.onerror = () => reject(new Error("Lecture mp3 base64 échouée."));
-      // L'autoplay nécessite un contexte d'interaction utilisateur (tap envoi/micro).
-      const playPromise = audio.play();
-      if (playPromise && typeof playPromise.then === "function") {
-        playPromise.catch((e) => reject(e));
-      }
-    } catch (e) {
-      reject(e instanceof Error ? e : new Error(String(e)));
-    }
-  });
+  if (typeof window === "undefined") return Promise.resolve();
+  return playOnShared(`data:${mime};base64,${base64}`);
+}
+
+/**
+ * Joue l'accusé de réveil « Oui, Monsieur. » en voix Andrew (MP3 statique servi
+ * par le front, identique sur tous les appareils). Repli sur la synthèse
+ * navigateur si le MP3 ne peut pas être joué. Résout toujours.
+ */
+export function playWakeAck(title: string = "Monsieur"): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  // Accusé genré selon l'utilisateur connecté (Andrew reste la voix de Jarvis).
+  const isMadame = title.toLowerCase().startsWith("madame");
+  const src = isMadame ? "/oui-madame.mp3" : "/oui-monsieur.mp3";
+  const fallback = isMadame ? "Oui, Madame." : "Oui, Monsieur.";
+  // Élément partagé débloqué → joue sur mobile. Repli voix navigateur si échec.
+  return playOnShared(src).catch(() => speak(fallback));
 }
 
 /** Précharge les voix (utile pour iOS où getVoices() est async). */

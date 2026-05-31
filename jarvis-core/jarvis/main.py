@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import os
 import secrets
 import tempfile
@@ -98,6 +99,55 @@ app = FastAPI(
 AUTH_USERNAME = os.getenv("AUTH_USERNAME", "denis")
 AUTH_PASSWORD = os.getenv("AUTH_PASSWORD", "CHANGE_ME_AUTH_PWD")
 AUTH_SESSION_TTL_HOURS = int(os.getenv("AUTH_SESSION_TTL_HOURS", "4"))
+
+# Titre d'adresse du compte principal (Denis). Les comptes additionnels portent
+# leur propre titre via JARVIS_EXTRA_USERS.
+AUTH_TITLE = os.getenv("AUTH_TITLE", "Monsieur")
+
+
+def _load_users() -> dict[str, dict[str, str]]:
+    """Table {username: {"password", "title"}} des comptes autorisés.
+
+    - Compte principal : AUTH_USERNAME / AUTH_PASSWORD (titre AUTH_TITLE).
+    - Comptes additionnels : variable JARVIS_EXTRA_USERS, un JSON du type
+      [{"username": "Muriel", "title": "Madame"}]. Si "password" est omis, le
+      compte hérite du mot de passe principal (AUTH_PASSWORD) — pratique pour
+      un couple qui partage le même mot de passe.
+    """
+    users: dict[str, dict[str, str]] = {}
+    if AUTH_PASSWORD != "CHANGE_ME_AUTH_PWD":
+        users[AUTH_USERNAME] = {"password": AUTH_PASSWORD, "title": AUTH_TITLE}
+    raw = os.getenv("JARVIS_EXTRA_USERS", "").strip()
+    if raw:
+        try:
+            for entry in json.loads(raw):
+                u = str(entry.get("username", "")).strip()
+                # Mot de passe optionnel : hérite de AUTH_PASSWORD si absent.
+                p = str(entry.get("password", "")) or AUTH_PASSWORD
+                t = str(entry.get("title", "Monsieur")).strip() or "Monsieur"
+                if u and p and p != "CHANGE_ME_AUTH_PWD":
+                    users[u] = {"password": p, "title": t}
+        except Exception as e:  # JSON malformé -> on ignore les comptes additionnels
+            print(f"[Jarvis] WARN: JARVIS_EXTRA_USERS invalide ({e})")
+    return users
+
+
+def _title_for(user_id: str) -> str:
+    """Titre d'adresse ('Monsieur'/'Madame') associé à un identifiant."""
+    entry = _load_users().get(user_id)
+    return entry["title"] if entry else AUTH_TITLE
+
+
+def _apply_title(text: str, title: str) -> str:
+    """Adapte le titre d'adresse dans la phrase parlée selon l'utilisateur.
+
+    Le corpus majordome emploie 'Monsieur' en apposition (vocatif) : une
+    substitution directe respecte donc la syntaxe. No-op pour le titre défaut.
+    """
+    if not text or title == "Monsieur":
+        return text
+    return text.replace("Monsieur", title).replace("monsieur", title.lower())
+
 
 # Stockage in-memory des sessions (suffisant pour 1 user en MVP)
 # Format : {token: {"user_id": str, "expires_at": datetime}}
@@ -206,6 +256,7 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     token: str
     user_id: str
+    title: str = "Monsieur"
     expires_at: str  # ISO 8601
 
 
@@ -219,14 +270,16 @@ async def auth_login(body: LoginRequest) -> LoginResponse:
 
     Renvoie un token de session valable AUTH_SESSION_TTL_HOURS heures.
     """
-    if AUTH_PASSWORD == "CHANGE_ME_AUTH_PWD":
+    users = _load_users()
+    if not users:
         raise HTTPException(
             status_code=503,
             detail="Auth non configurée — AUTH_PASSWORD doit être défini dans .env serveur",
         )
 
-    # Protection bruteforce minimale (délai constant si KO)
-    valid = (body.username == AUTH_USERNAME) and (body.password == AUTH_PASSWORD)
+    # Protection bruteforce minimale (délai constant si KO) + comparaison constante
+    entry = users.get(body.username)
+    valid = entry is not None and secrets.compare_digest(body.password, entry["password"])
     if not valid:
         await asyncio.sleep(0.5)
         raise HTTPException(status_code=401, detail="Identifiants invalides")
@@ -239,6 +292,7 @@ async def auth_login(body: LoginRequest) -> LoginResponse:
     return LoginResponse(
         token=token,
         user_id=body.username,
+        title=entry["title"],
         expires_at=expires_at.isoformat() + "Z",
     )
 
@@ -302,6 +356,8 @@ async def intent_text(
     """
     router: CommandRouter = app.state.command_router
     result = await router.handle_text(body.text, now=datetime.utcnow())
+    # Genrage selon l'utilisateur connecté (déduit du token de session) — texte ET TTS
+    result.speak = _apply_title(result.speak, _title_for(user_id))
     response = _result_to_response(result)
 
     audio_b64 = await _synthesize_speak_audio(result.speak)
@@ -343,6 +399,7 @@ async def intent_audio(
 
     router: CommandRouter = app.state.command_router
     result = await router.handle_text(transcribed, now=datetime.utcnow())
+    result.speak = _apply_title(result.speak, _title_for(user_id))
     response = _result_to_response(result)
     return JSONResponse(
         content={**response.model_dump(), "transcribed_text": transcribed},
@@ -383,6 +440,7 @@ async def intent_audio_full(
 
     router: CommandRouter = app.state.command_router
     result = await router.handle_text(transcribed, now=datetime.utcnow())
+    result.speak = _apply_title(result.speak, _title_for(user_id))
 
     # Synthèse TTS de la réponse
     tts_out = Path(tempfile.mkdtemp()) / "jarvis_response.mp3"

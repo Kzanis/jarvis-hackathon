@@ -9,19 +9,20 @@ import { Transcript } from "@/components/Transcript";
 import { clearSession, getSession } from "@/lib/auth";
 import { useJarvis } from "@/lib/store";
 
-const STATE_LABELS: Record<string, string> = {
-  idle: "À votre service, Monsieur.",
+const stateLabels = (title: string): Record<string, string> => ({
+  idle: `À votre service, ${title}.`,
   listening: "Je vous écoute…",
   thinking: "Permettez-moi un instant…",
   speaking: "Jarvis parle.",
   action: "Commande exécutée.",
   error: "Une difficulté est survenue.",
-};
+});
 
 export default function JarvisApp() {
   const router = useRouter();
   const state = useJarvis((s) => s.state);
   const [userId, setUserId] = useState<string | null>(null);
+  const [title, setTitle] = useState("Monsieur");
   const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
@@ -31,6 +32,7 @@ export default function JarvisApp() {
       return;
     }
     setUserId(session.user_id);
+    setTitle(session.title || "Monsieur");
     setAuthChecked(true);
   }, [router]);
 
@@ -75,10 +77,10 @@ export default function JarvisApp() {
         </div>
 
         <div className="text-center text-sm text-cyan-300/80 transition-opacity">
-          {STATE_LABELS[state] ?? STATE_LABELS.idle}
+          {stateLabels(title)[state] ?? stateLabels(title).idle}
         </div>
 
-        <CommandComposer />
+        <CommandComposer title={title} />
 
         <Transcript />
 

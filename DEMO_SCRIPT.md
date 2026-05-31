@@ -81,7 +81,7 @@
 | 🎙️ Denis | « Jarvis, ouvre le portail. » |
 | 🤖 Jarvis | **Confirmation obligatoire** (niveau sensible) : « Vous confirmez l'ouverture du portail, Monsieur ? » |
 | 🎙️ Denis | « Oui. » → exécution. |
-| 👁️ Écran (droite) | Le portail s'ouvre **physiquement** (moteur Evolvia neuf). |
+| 👁️ Écran (droite) | Le portail s'ouvre **physiquement** (moteur neuf). |
 | 🎧 Voix off | « Action à fort impact = Jarvis demande confirmation avant d'agir. C'est la sécurité par conception. La reconnaissance de plaque qui ouvrira tout seul, c'est pour la V2. » |
 
 **But** : prouver les garde-fous de sécurité + teaser V2.

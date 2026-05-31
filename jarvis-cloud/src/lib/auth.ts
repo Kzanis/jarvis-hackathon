@@ -15,6 +15,7 @@ const LOGIN_URL =
 export interface JarvisSession {
   token: string;
   user_id: string;
+  title?: string; // "Monsieur" | "Madame" — titre d'adresse renvoyé par le login
   expires_at: string; // ISO 8601 (UTC)
 }
 

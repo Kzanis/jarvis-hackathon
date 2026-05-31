@@ -1,0 +1,70 @@
+{
+  "name": "Jarvis - Login",
+  "nodes": [
+    {
+      "id": "webhook_login",
+      "name": "Webhook Login",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [240, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "jarvis-login",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "forward_vm_login",
+      "name": "Forward Login Freebox",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://VOTRE_BACKEND_JARVIS:PORT/auth/login",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ username: $json.body.username, password: $json.body.password }) }}",
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "responseFormat": "json"
+            }
+          },
+          "redirect": {
+            "redirect": {}
+          }
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "respond_login",
+      "name": "Respond Login",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [680, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": "={{ $json.error ? 401 : 200 }}"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Login": {
+      "main": [[{ "node": "Forward Login Freebox", "type": "main", "index": 0 }]]
+    },
+    "Forward Login Freebox": {
+      "main": [[{ "node": "Respond Login", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

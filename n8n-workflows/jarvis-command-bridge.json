@@ -20,52 +20,116 @@
       "name": "Valider Token",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 300],
+      "position": [440, 300],
       "parameters": {
         "language": "javaScript",
-        "jsCode": "// Auth simple via Bearer Token. HTTPS protège déjà la transmission.\n// TODO : passer en HMAC quand n8n autorisera 'crypto', via un node Crypto natif.\nconst expectedToken = 'CHANGEZ_MOI_AVEC_VOTRE_TOKEN_DE_32_OCTETS_BASE64URL';\n\nconst raw = $input.first().json;\nconst body = raw.body || raw;\nconst headers = raw.headers || {};\nconst authHeader = headers['authorization'] || headers['Authorization'] || '';\nconst userIdHeader = headers['x-jarvis-user'] || 'unknown';\n\nconst providedToken = authHeader.replace(/^Bearer\\s+/i, '').trim();\nconst valid = providedToken === expectedToken;\n\nif (valid) {\n  return [{ json: {\n    status: 'ok',\n    user_id: userIdHeader,\n    received: body,\n    jarvis_says: 'Bien Monsieur. Ce sera fait.',\n    note: 'Mock — forward vers backend Jarvis local à ajouter quand Cloudflare Tunnel sera prêt.',\n    timestamp: new Date().toISOString()\n  }}];\n}\n\nreturn [{ json: {\n  status: 'unauthorized',\n  reason: !authHeader ? 'header Authorization manquant' : 'token invalide',\n  timestamp: new Date().toISOString()\n}}];"
+        "jsCode": "// Le token de session est valide cote VM Jarvis. n8n forward simplement.\n// On verifie juste qu'un Authorization Bearer est present et qu'un text existe.\n\nconst raw = $input.first().json;\nconst body = raw.body || raw;\nconst headers = raw.headers || {};\nconst authHeader = headers['authorization'] || headers['Authorization'] || '';\n\nif (!authHeader || !/^Bearer\\s+/i.test(authHeader)) {\n  return [{ json: {\n    authorized: false,\n    status_code: 401,\n    error: 'header Authorization Bearer manquant — connectez-vous via /login',\n    timestamp: new Date().toISOString()\n  }}];\n}\n\nconst text = (body.text || body.transcribed_text || '').toString().trim();\nif (!text) {\n  return [{ json: {\n    authorized: false,\n    status_code: 400,\n    error: 'champ text manquant ou vide dans le body',\n    timestamp: new Date().toISOString()\n  }}];\n}\n\nreturn [{ json: {\n  authorized: true,\n  user_id: body.user_id || 'denis',\n  text: text,\n  bearer_token: authHeader.replace(/^Bearer\\s+/i, '').trim(),\n  timestamp: new Date().toISOString()\n}}];"
       }
     },
     {
-      "id": "respond",
-      "name": "Respond",
+      "id": "if_authorized",
+      "name": "Si autorisé",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [640, 300],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "auth-check",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "call_jarvis",
+      "name": "Appel Jarvis Freebox",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 220],
+      "parameters": {
+        "method": "POST",
+        "url": "http://VOTRE_BACKEND_JARVIS:PORT/intent/text",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.text, user_id: $json.user_id }) }}",
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "responseFormat": "json"
+            }
+          }
+        },
+        "sendHeaders": true,
+        "specifyHeaders": "json",
+        "jsonHeaders": "={{ JSON.stringify({ Authorization: 'Bearer ' + $json.bearer_token }) }}"
+      }
+    },
+    {
+      "id": "respond_success",
+      "name": "Respond Success",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
-      "position": [680, 300],
+      "position": [1100, 220],
       "parameters": {
         "respondWith": "json",
         "responseBody": "={{ JSON.stringify($json) }}",
-        "options": {}
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "respond_error",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [880, 400],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: $json.error, timestamp: $json.timestamp }) }}",
+        "options": {
+          "responseCode": "={{ $json.status_code || 401 }}"
+        }
       }
     }
   ],
   "connections": {
     "Webhook Jarvis": {
-      "main": [
-        [
-          {
-            "node": "Valider Token",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Valider Token", "type": "main", "index": 0 }]]
     },
     "Valider Token": {
+      "main": [[{ "node": "Si autorisé", "type": "main", "index": 0 }]]
+    },
+    "Si autorisé": {
       "main": [
-        [
-          {
-            "node": "Respond",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{ "node": "Appel Jarvis Freebox", "type": "main", "index": 0 }],
+        [{ "node": "Respond Error", "type": "main", "index": 0 }]
       ]
+    },
+    "Appel Jarvis Freebox": {
+      "main": [[{ "node": "Respond Success", "type": "main", "index": 0 }]]
     }
   },
   "settings": {
     "executionOrder": "v1"
-  },
-  "pinData": {},
-  "tags": []
+  }
 }

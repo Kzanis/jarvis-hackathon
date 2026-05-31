@@ -22,12 +22,14 @@ import {
   isSpeechSynthesisSupported,
   listenOnce,
   playBase64Audio,
+  playWakeAck,
   preloadVoices,
   speak,
   startHandsFree,
+  unlockAudio,
 } from "@/lib/voice";
 
-export function CommandComposer() {
+export function CommandComposer({ title = "Monsieur" }: { title?: string }) {
   const [text, setText] = useState("");
   const [pending, setPending] = useState(false);
   const [listening, setListening] = useState(false);
@@ -166,6 +168,9 @@ export function CommandComposer() {
       setError("Mode mains libres indisponible (navigateur non supporté).");
       return;
     }
+    // Geste utilisateur (ce tap) : débloque l'audio pour que l'accusé Andrew et
+    // les réponses puissent jouer sur mobile (sinon repli voix navigateur féminine).
+    unlockAudio();
     const ctrl = startHandsFree({
       onWakeDetected: () => {
         setHandsFreeStatus("Jarvis vous écoute…");
@@ -173,12 +178,12 @@ export function CommandComposer() {
         // Accusé vocal : permet de savoir qu'il écoute sans regarder l'écran.
         // On met l'écoute en pause le temps de parler (anti-feedback), puis on
         // la reprend — l'état "armé" reste actif, la commande suivante est captée.
-        if (isSpeechSynthesisSupported()) {
-          handsFreeCtrl.current?.pause();
-          void speak("Oui, Monsieur.").finally(() => {
-            handsFreeCtrl.current?.resume();
-          });
-        }
+        // Voix Andrew (MP3 statique) pour rester identique homme sur PC ET mobile,
+        // repli navigateur géré dans playWakeAck().
+        handsFreeCtrl.current?.pause();
+        void playWakeAck(title).finally(() => {
+          handsFreeCtrl.current?.resume();
+        });
       },
       onCommand: (cmd) => {
         setHandsFreeStatus("");
@@ -245,7 +250,7 @@ export function CommandComposer() {
         </button>
 
         <input
-          className="flex-1 rounded-lg border border-cyan-500/40 bg-slate-900/80 px-4 py-3 text-cyan-50 placeholder:text-cyan-700/70 outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/40"
+          className="min-w-0 flex-1 rounded-lg border border-cyan-500/40 bg-slate-900/80 px-4 py-3 text-cyan-50 placeholder:text-cyan-700/70 outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/40"
           placeholder={
             listening
               ? "Parlez maintenant…"

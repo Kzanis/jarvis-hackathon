@@ -1,88 +1,50 @@
 # Workflows n8n — Jarvis
 
-Ce dossier contient les workflows n8n exportés en JSON, prêts à être importés dans n'importe quelle instance n8n.
+Ce dossier contient les workflows n8n du projet, exportés en JSON et **nettoyés de tout secret** (l'adresse réelle du backend est remplacée par un placeholder). Ils sont prêts à être importés dans n'importe quelle instance n8n.
 
-## Liste des workflows
+> 🔒 **Aucun mot de passe ni token n'est stocké dans ces workflows.** L'authentification réelle est gérée par le backend `jarvis-core` (login + jeton de session). n8n ne fait que **transmettre** le jeton fourni par la PWA.
 
-### `jarvis-command-bridge.json`
+## Rôle des deux workflows
 
-**Rôle :** pont sécurisé entre la PWA mobile et le backend Jarvis local (à la maison).
+Jarvis n'utilise n8n que comme **pont sécurisé** entre la PWA mobile (publique, sur Hostinger) et le backend `jarvis-core` (privé, sur la VM Freebox à la maison). Toute la logique métier et tous les garde-fous sont dans le backend, pas dans n8n.
+
+### 1. `jarvis-login.json` — la connexion
+
+**Trigger :** webhook `POST /webhook/jarvis-login`
+
+```
+PWA  ──{username, password}──►  n8n  ──►  backend /auth/login  ──►  {jeton de session}
+```
+
+La PWA envoie les identifiants, n8n les transmet au backend, le backend renvoie un jeton de session valable 4 h. n8n ne stocke rien.
+
+### 2. `jarvis-command-bridge.json` — les commandes vocales
 
 **Trigger :** webhook `POST /webhook/jarvis-command`
-
-**Auth :** header `Authorization: Bearer <token>`
-
-**Architecture :**
+**Auth :** header `Authorization: Bearer <jeton de session>`
 
 ```
-PWA mobile (HTTPS)
-   │
-   │ POST /webhook/jarvis-command
-   │ Authorization: Bearer <token>
-   │ X-Jarvis-User: denis
-   │ {"text": "Jarvis, ferme le volet de la buanderie"}
-   ▼
-n8n Webhook
-   ▼
-Valider Token (JS) ── token invalide ──► Respond 401
-   │
-   │ token OK
-   ▼
-Respond 200 (mock pour l'instant — à remplacer par forward HTTP vers backend local via Cloudflare Tunnel)
+PWA ──{text, Bearer jeton}──► n8n ──► [Valider Token] ──► [Si autorisé ?]
+                                                             │
+                                       non ──► Respond 401/400
+                                       oui ──► backend /intent/text (avec le Bearer) ──► Respond 200
 ```
+
+Le nœud **Valider Token** vérifie seulement qu'un `Authorization: Bearer` et un champ `text` sont présents — la **validité** du jeton, elle, est vérifiée côté backend (source de vérité unique). Si tout est bon, la commande est transmise au backend, qui l'exécute via l'orchestrateur et les sous-agents (TaHoma, Freebox, etc.).
+
+## ⚙️ Avant d'importer : remplacer le placeholder
+
+Les deux workflows pointent vers `http://VOTRE_BACKEND_JARVIS:PORT`. Remplacez cette valeur par l'adresse de **votre** backend `jarvis-core` (dans les nœuds *Forward Login Freebox* et *Appel Jarvis Freebox*).
 
 ## Import dans n8n
 
-1. Ouvrir n8n
-2. Workflows → bouton **+** → **Import from File**
-3. Sélectionner `jarvis-command-bridge.json`
-4. **AVANT D'ACTIVER** : remplacer dans le node "Valider Token" la constante `expectedToken` par votre propre token (32 octets aléatoires base64url, généré avec `openssl rand -base64 32` par exemple)
-5. Sauvegarder
-6. Activer le workflow
+1. Ouvrir n8n → **Workflows** → **+** → **Import from File**
+2. Sélectionner `jarvis-login.json` (puis recommencer pour `jarvis-command-bridge.json`)
+3. Dans chaque nœud HTTP, remplacer `http://VOTRE_BACKEND_JARVIS:PORT` par votre adresse réelle
+4. Sauvegarder, puis activer
 
-## Test après import
+## Sécurité — pourquoi Bearer Token et pas HMAC ?
 
-```bash
-# Test sans token (doit retourner unauthorized)
-curl -X POST https://<votre-n8n>/webhook/jarvis-command \
-  -H "Content-Type: application/json" \
-  -d '{"text":"test"}'
+L'implémentation initiale visait HMAC-SHA256, mais la version de n8n bloque `require('crypto')` dans les nœuds Code (`Module 'crypto' is disallowed`). Le Bearer Token sur HTTPS reste sûr (TLS + jeton long + rotation facile). Migration HMAC prévue quand n8n autorisera `crypto`, ou via le nœud natif `n8n-nodes-base.crypto`.
 
-# Test avec token valide
-curl -X POST https://<votre-n8n>/webhook/jarvis-command \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer VOTRE_TOKEN_ICI" \
-  -H "X-Jarvis-User: denis" \
-  -d '{"text":"Jarvis, ferme le volet de la buanderie"}'
-```
-
-Réponse attendue (mode mock) :
-```json
-{
-  "status": "ok",
-  "user_id": "denis",
-  "received": {"text": "Jarvis, ferme le volet de la buanderie"},
-  "jarvis_says": "Bien Monsieur. Ce sera fait.",
-  "note": "Mock — forward vers backend Jarvis local à ajouter quand Cloudflare Tunnel sera prêt.",
-  "timestamp": "2026-05-14T..."
-}
-```
-
-## Sécurité — Pourquoi Bearer Token et pas HMAC ?
-
-L'implémentation initiale visait HMAC-SHA256 pour signer chaque requête, mais la version actuelle de n8n bloque `require('crypto')` dans les Code nodes (`Module 'crypto' is disallowed`).
-
-Le Bearer Token sur HTTPS reste sûr :
-- Transmission chiffrée TLS
-- Token long (32 octets = 256 bits d'entropie)
-- Rotation facile (changer le token dans le workflow + dans le `.env` client)
-
-**Migration future HMAC :** quand n8n autorisera `crypto`, ou via le node natif `n8n-nodes-base.crypto`, on basculera sur HMAC pour la non-replay.
-
-## Variables d'environnement côté n8n
-
-Aucune nécessaire dans la version Bearer Token actuelle (le token est hardcodé dans le code, à modifier avant import).
-
-Pour une production réelle :
-- Stocker le token dans un secret manager côté n8n (credentials)
-- Ou activer `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` puis utiliser `$env.JARVIS_TOKEN`
+> Voir [`../MAKING_OF.md`](../MAKING_OF.md) §3.5 pour le détail de ce choix.

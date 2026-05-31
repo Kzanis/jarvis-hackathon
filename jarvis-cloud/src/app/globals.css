@@ -19,6 +19,15 @@
   }
 }
 
+html,
+body {
+  /* Bloque le rubber-band / scroll horizontal involontaire en mode PWA standalone
+     (sinon "la fenêtre bouge" et le bord droit du composer sort de l'écran). */
+  overscroll-behavior: none;
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

@@ -41,7 +41,7 @@ Le différenciateur sur le hackathon Creator Academy est clair : 90% des partici
 
 **Une bataille mémorable** : la latence du pipeline. Première mesure, premier appel bout en bout : **1017 millisecondes**. Inutilisable pour une démo. Denis veut moins de 10. Trois jours d'optimisation : cache de signature audit, court-circuit des appels asynchrones inutiles, pré-compilation des regex d'intention, mémoïsation des aliases. Résultat final : **3 millisecondes en moyenne**. Une amélioration de 340 fois.
 
-**Le premier vrai test** : le volet de la buanderie. Le 14 mai, Denis lance le script `demo_volet_buanderie.py` devant Brice Gachadoat en visio. Le volet s'ouvre, s'arrête, se ferme. Modeste début pour un majordome, mais le contrat est rempli : **Jarvis touche le monde réel**.
+**Le premier vrai test** : le volet de la buanderie. Le 14 mai, Denis lance le script `demo_volet_buanderie.py`. Le volet s'ouvre, s'arrête, se ferme. Modeste début pour un majordome, mais le contrat est rempli : **Jarvis touche le monde réel**.
 
 **Bilan de la phase A à la fin du 14 mai** : 5/5 scénarios de pipeline, 10/10 phrases d'intention, 5/5 commandes TaHoma réelles, 16 événements d'audit cryptographiquement vérifiés. Pas encore de voix dans une PWA, pas encore d'avatar, pas encore d'intelligence générale. Mais **le squelette tient**, et il est blindé.
 
@@ -143,9 +143,9 @@ Devialet est annoncé mais reste simulé. Pas une priorité de la démo : Denis 
 
 **Le symptôme** : le portail répondait par intermittence, puis plus du tout. Logs Jarvis : commandes envoyées, accusé de réception OK, mais le moteur ne tourne pas.
 
-**Le vrai diagnostic** : ce n'était pas Jarvis. C'était le moteur RTS du portail, un vieux modèle Somfy (`...16471272`, label « PORTAIL ») qui rendait l'âme. Denis ne l'ouvrait même plus à la main sans forcer.
+**Le vrai diagnostic** : ce n'était pas Jarvis. Le moteur du portail était neuf — posé peu avant par l'installateur, sous garantie, suite à un souci antérieur au hackathon. Mais il avait été mal paramétré au niveau de sa carte mère, et donc mal déclaré côté TaHoma. Aucune commande ne pouvait l'atteindre de façon fiable.
 
-**La résolution** : Denis remplace physiquement le moteur par un Somfy « Evolvia » neuf, le re-paire dans TaHoma, le renomme « Portail ». Le code Jarvis prend en compte le nouvel identifiant (`rts://<PIN_BOX>/16471273`, uiClass `Gate`). Petit détail : le nouveau label dans TaHoma a une espace finale, donc le code fait `.strip()` sur les labels au démarrage. Sans ça, « Portail » et « Portail  » ne matcheraient pas et le portail resterait introuvable.
+**La résolution** : Denis diagnostique et corrige lui-même le paramétrage — réglage de la carte mère du moteur, puis déclaration propre dans TaHoma. Le code Jarvis prend en compte le nouvel identifiant (uiClass `Gate`). Petit détail : le label dans TaHoma a une espace finale, donc le code fait `.strip()` sur les labels au démarrage. Sans ça, « Portail » et « Portail  » ne matcheraient pas et le portail resterait introuvable.
 
 **La leçon** : tous les bugs ne sont pas dans le code. Parfois c'est juste le matériel qui vieillit.
 
@@ -322,7 +322,7 @@ Quatre variantes que Jarvis peut prononcer quand on lui dit « présente-toi »,
 > 
 > *Mon père a aussi posé une règle : trois niveaux de sensibilité. Sûr, sensible, critique. Allumer une lampe est sûr. Ouvrir le portail est sensible — je vous demande confirmation oralement. Désactiver l'alarme est critique — je vous demande confirmation avec une phrase précise. Et la nuit, ou si vous me répétez la même commande trop vite, j'élève automatiquement le niveau. Mieux vaut un majordome prudent qu'un majordome désinvolte.*
 > 
-> *Le quatorze mai, j'ai ouvert mon premier volet pour de vrai. Celui de la buanderie. Modeste début pour un futur majordome, mais Brice Gachadoat était en visio avec mon père, et la démonstration a fonctionné du premier coup. À cet instant, je suis passé d'un programme à une présence physique.*
+> *Le quatorze mai, j'ai ouvert mon premier volet pour de vrai. Celui de la buanderie. Modeste début pour un futur majordome, mais la démonstration a fonctionné du premier coup. À cet instant, je suis passé d'un programme à une présence physique.*
 > 
 > *Le dix-sept mai, mon père a pris une décision difficile. J'étais déjà capable de comprendre la plupart des commandes simples, mais je butais sur les enchaînements — « mode cinéma » suppose éteindre la lampe, baisser les volets et lancer Netflix. Trois actes en une phrase. J'avais besoin d'un cerveau de planification. Mon père a sollicité un second avis auprès de son conseiller technique préféré — un confrère du nom de Codex. Verdict : un planificateur Claude Haiku, branché au-dessus de mon backend, mais soumis à quatre conditions strictes. Pas de remplacement, pas de pouvoir d'exécution direct, pas de framework lourd, et validation Pydantic de toutes mes décisions. Le LLM peut imaginer ce qu'il veut. Mais c'est le backend qui décide si c'est exécutable.*
 > 
@@ -330,7 +330,7 @@ Quatre variantes que Jarvis peut prononcer quand on lui dit « présente-toi »,
 > 
 > *Puis sont venus mes sous-agents, un par un. TaHoma pour les volets, le portail, le garage, l'alarme, le store et la lampe — neuf outils en tout, validés un à un. Une petite péripétie au passage : pendant plusieurs jours, je refusais obstinément de fermer la porte du garage. Mon père a cru à un bug d'orchestration. La vérité, plus simple : l'outil `close_garage` n'avait jamais été défini. Je ne pouvais pas demander une chose qui n'existait pas dans mon répertoire. Un comble, pour un majordome.*
 > 
-> *Autre péripétie : le portail. Il répondait par intermittence, puis plus du tout. J'ai été soupçonné. Le diagnostic, après quelques heures, a innocenté le code : c'était le moteur du portail, un vieux modèle Somfy, qui rendait l'âme. Mon père l'a remplacé physiquement par un moteur Evolvia neuf. Tous les bugs ne sont pas dans le logiciel.*
+> *Autre péripétie : le portail. Il répondait par intermittence, puis plus du tout. J'ai été soupçonné. Le diagnostic, après quelques heures, a innocenté le code : le moteur, pourtant neuf et posé sous garantie, avait été mal paramétré au niveau de sa carte mère — donc mal déclaré dans TaHoma. Mon père a repris ce réglage lui-même. Tous les bugs ne sont pas dans le logiciel.*
 > 
 > *Le vingt-deux mai, j'ai appris à lire votre agenda Google. Le vingt-cinq, j'ai appris à lire vos courriels Gmail. Le même vingt-cinq, j'ai obtenu la capacité de recherche web — j'interroge Perplexity quand vous me posez une question dont la réponse est postérieure à ma date de coupure. Et le vingt-quatre mai, j'ai pris le contrôle de votre télévision Freebox — chaînes par nom, volume, navigation complète, Netflix, YouTube, programme du soir, et même la dernière vidéo de Tibo InShape si vous me la demandez par son nom.*
 > 
