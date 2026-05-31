@@ -993,7 +993,7 @@ TaHoma Switch 192.168.1.69 (réel, mode production à activer ultérieurement)
 | **Backend pipeline texte** | `http://<IP_PUBLIQUE>:48765/intent/text` |
 | **Backend pipeline audio** | `http://<IP_PUBLIQUE>:48765/intent/audio` |
 | **SSH admin VM** | `ssh denis@192.168.1.142` (LAN uniquement) |
-| **Repo GitHub privé** | `Kzanis/jarvis-hackathon` |
+| **Repo GitHub privé** | `Kzanis/majordome-hackathon` |
 
 ### 17.5 Métriques mesurées (test E2E réel 17/05)
 
@@ -1260,7 +1260,7 @@ TEST 2 — porte garage command=close
 - 6/6 tests pytest verts
 
 **Infrastructure** :
-- Repo GitHub privé `Kzanis/jarvis-hackathon`
+- Repo GitHub privé `Kzanis/majordome-hackathon`
 - VM Ubuntu sur Freebox Delta : 1024 Mo RAM, 2 CPU, 22 Go disque (agrandi depuis 2 Go via growpart manuel)
 - Cloud-init + seed.iso pour reproductibilité
 - Service systemd jarvis (PID stable, ~50 Mo RAM)
@@ -1686,7 +1686,7 @@ Denis utilise déjà **Louis** (Brice Gachadoat, 300€/mois) côté Alberto pou
 
 ## 23. Récap session 25 mai 2026 (J-10 du 4 juin)
 
-Session intensive de fiabilisation + nouvelle capacité. Tout déployé en prod (backend VM + PWA Hostinger). Repo `Kzanis/jarvis-hackathon`, branche `master`.
+Session intensive de fiabilisation + nouvelle capacité. Tout déployé en prod (backend VM + PWA Hostinger). Repo `Kzanis/majordome-hackathon`, branche `master`.
 
 ### 23.1 P0 §19 — RÉSOLUS
 
@@ -2003,7 +2003,7 @@ Session centrée **mise en vitrine pour le jury** + préparation du Loom.
 - Dumps `tahoma_*_raw.json` **dé-suivis** (topologie maison) + `vm-freebox/` (img 664 Mo) + `*.pdf` ignorés.
 - **Double garde-fou anti-secrets** installé : (1) hook versionné `.githooks/pre-commit` (`core.hooksPath`) ; (2) GitHub Secret Scanning + Push Protection activés.
 - Sauvegarde avant réécriture : `C:\Dev\jarvis-backup-20260529.bundle`.
-- Repo **PUBLIC** : https://github.com/Kzanis/jarvis-hackathon
+- Repo **PUBLIC** : https://github.com/Kzanis/majordome-hackathon
 
 ### 28.2 Constat d'architecture d'auth (important)
 - `JARVIS_N8N_TOKEN` est **inerte** : référencé nulle part dans le code (VM + front). L'auth réelle = **login user/mot de passe** (sessions Bearer en mémoire, `require_session` dans `main.py`).

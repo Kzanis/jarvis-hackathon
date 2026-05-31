@@ -13,8 +13,10 @@
 
 | Élément | Lien |
 |---|---|
-| Dépôt GitHub (public) | https://github.com/Kzanis/jarvis-hackathon |
+| Dépôt GitHub | https://github.com/Kzanis/majordome-hackathon |
 | Site / PWA | https://jarvis.creatorsystemia.fr |
+
+> 🔒 **Visibilité du repo** : **PRIVÉ** jusqu'à la soumission (invisible, introuvable). À **repasser PUBLIC au moment de soumettre** — sinon le jury tombe sur une page « introuvable » (404). Renommé `jarvis-hackathon` → `majordome-hackathon` (l'ancien lien redirige).
 
 ---
 

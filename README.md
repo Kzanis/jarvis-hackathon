@@ -29,8 +29,8 @@ Jarvis est un majordome IA qui :
 Le repo public est conçu pour être **exécutable sans aucun matériel physique** grâce au MOCK MODE.
 
 ```bash
-git clone https://github.com/denis-sole/jarvis-hackathon
-cd jarvis-hackathon/jarvis-core
+git clone https://github.com/Kzanis/majordome-hackathon
+cd majordome-hackathon/jarvis-core
 
 # 1. Installer les dépendances Python
 python -m venv .venv
@@ -131,7 +131,7 @@ Jarvis pilote un portail et une alarme. **Au moindre doute → option la plus re
 ## 📂 Structure du repo
 
 ```
-jarvis-hackathon/
+majordome-hackathon/
 ├── README.md                    ← tu es ici
 ├── ARCHITECTURE.md              ← architecture détaillée
 ├── PRD.md                       ← cahier des charges produit

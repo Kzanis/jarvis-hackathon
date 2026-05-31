@@ -1,7 +1,7 @@
 # CLAUDE.md — Projet Jarvis (Hackathon Creator Academy)
 
 > Mémoire de projet pour Claude Code. Lue automatiquement à l'ouverture du dépôt.
-> Repo **public** : https://github.com/Kzanis/jarvis-hackathon — **JAMAIS de secret ici** (placeholders only).
+> Repo **public** : https://github.com/Kzanis/majordome-hackathon — **JAMAIS de secret ici** (placeholders only).
 
 ## C'est quoi
 Jarvis = majordome IA personnel **vocal, temps réel**, qui pilote la vraie maison de Denis Solé (volets, portail, garage, TV, agenda, mail). Thème 1 du hackathon (assistant vocal). Deadline soumission : **4 juin 2026 minuit**, vidéo Loom 5 min max.

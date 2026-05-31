@@ -3,7 +3,7 @@
 > Le parcours du projet : par où on est passé, les problèmes rencontrés et comment on les a résolus, les virages stratégiques et leur justification — et le point d'honneur qui a guidé chaque choix technique : **zéro coût récurrent**.
 >
 > Hackathon Académie IApreneurs × Hostinger — Thème 01 « Assistant personnel IA, vocal, temps réel ».
-> Période : 12 mai → 4 juin 2026. Repo public : https://github.com/Kzanis/jarvis-hackathon
+> Période : 12 mai → 4 juin 2026. Repo public : https://github.com/Kzanis/majordome-hackathon
 
 ---
 
