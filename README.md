@@ -4,6 +4,8 @@
 
 **Hackathon Creator Academy 2026 — Thème 1 : Assistant Personnel**
 
+> 🧠 **Intégralement conçu, codé, testé et déployé avec [Claude Code](https://claude.com/claude-code)** — l'agent de développement IA d'Anthropic.
+
 Jarvis est un majordome IA qui :
 - 🪟 **Contrôle physiquement** la maison (volets, portail, garage, alarme, store) via la box Somfy TaHoma
 - 📺 **Pilote** la Freebox (TV, chaînes, volume, audio Devialet intégré à la Delta)
