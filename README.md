@@ -18,7 +18,7 @@ Jarvis est un majordome IA qui :
 
 **🎥 Présentation du projet (< 5 min)** → https://youtu.be/OB42MOhmvXk
 
-**🎬 Démo complète — Jarvis pilote la vraie maison, en direct** → https://youtu.be/QZAmOG7IwMk
+**🎬 Démo complète — Jarvis pilote la vraie maison, en direct** → https://youtu.be/BrSXclZiA78
 
 ![architecture](docs/architecture.png)
 
