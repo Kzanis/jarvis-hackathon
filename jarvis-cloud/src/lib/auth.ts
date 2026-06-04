@@ -12,10 +12,13 @@ const LOGIN_URL =
   (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_JARVIS_LOGIN_URL) ||
   "https://creatorweb.fr/webhook/jarvis-login";
 
+export type JarvisRole = "admin" | "locataire" | "visiteur";
+
 export interface JarvisSession {
   token: string;
   user_id: string;
   title?: string; // "Monsieur" | "Madame" — titre d'adresse renvoyé par le login
+  role?: JarvisRole; // rôle RBAC ; complété et fait autorité par GET /auth/welcome
   expires_at: string; // ISO 8601 (UTC)
 }
 
@@ -49,6 +52,61 @@ export function clearSession(): void {
 export function getBearerToken(): string | null {
   const session = getSession();
   return session ? session.token : null;
+}
+
+/** Rôle RBAC courant. Défaut « visiteur » (le plus restrictif) si absent. */
+export function getRole(): JarvisRole {
+  const session = getSession();
+  return session?.role ?? "visiteur";
+}
+
+/** Met à jour le rôle dans la session stockée (rôle faisant autorité renvoyé par /auth/welcome). */
+export function updateSessionRole(role: JarvisRole): void {
+  const session = getSession();
+  if (!session) return;
+  setSession({ ...session, role });
+}
+
+// ---------------------------------------------------------------------------
+// Nom d'adresse choisi par l'utilisateur (« comment dois-je vous appeler ? »).
+// Mémorisé par appareil ET par utilisateur, persistant entre les sessions, pour
+// n'être demandé qu'une seule fois (PRD §30.4).
+// ---------------------------------------------------------------------------
+
+const NAME_KEY = "jarvis_display_name_v1";
+
+export function getDisplayName(userId: string): string | null {
+  if (typeof window === "undefined" || !userId) return null;
+  try {
+    const map = JSON.parse(window.localStorage.getItem(NAME_KEY) || "{}") as Record<string, string>;
+    const name = map[userId];
+    return name && name.trim() ? name : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setDisplayName(userId: string, name: string): void {
+  if (typeof window === "undefined" || !userId || !name.trim()) return;
+  let map: Record<string, string> = {};
+  try {
+    map = JSON.parse(window.localStorage.getItem(NAME_KEY) || "{}") as Record<string, string>;
+  } catch {
+    map = {};
+  }
+  map[userId] = name.trim();
+  window.localStorage.setItem(NAME_KEY, JSON.stringify(map));
+}
+
+export function clearDisplayName(userId: string): void {
+  if (typeof window === "undefined" || !userId) return;
+  try {
+    const map = JSON.parse(window.localStorage.getItem(NAME_KEY) || "{}") as Record<string, string>;
+    delete map[userId];
+    window.localStorage.setItem(NAME_KEY, JSON.stringify(map));
+  } catch {
+    /* ignore */
+  }
 }
 
 export class LoginError extends Error {

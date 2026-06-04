@@ -2067,3 +2067,196 @@ Session centrée **mise en vitrine pour le jury** + préparation du Loom.
 3. DEMO_SCRIPT à valider, répétitions, **tournage 2-3/06**, **soumission 4/06 minuit**.
 
 *Section ajoutée le 30/05/2026 (Denis avec Anto). Mode cinéma + correctif voix déployés (VM + Hostinger), non commités. Décision : tél = appui-micro, démo = PC.*
+
+---
+
+## 30. Gestion des accès par rôle (RBAC) — cadrage 2 juin 2026
+
+> **Statut (02/06 soir) : TOUT codé + testé (13/13) + webhooks n8n actifs. RIEN déployé** (branche `feat/rbac-jury`). **Reprise 03/06 = Anto exécute le déploiement VM + front + test — voir §30.11.**
+> Périmètre retenu = **Vitesse 1** (léger, pour la soumission). Titre jury validé = **« Votre Sagacité »**.
+> **Affinage 02/06** : le jury (visiteur) n'a **aucun accès TaHoma** (zéro action) ; à la connexion, Jarvis **se présente**, explique le bridage « par sécurité », **liste ses capacités**, dit ce qui est verrouillé, et oriente vers une **visio avec Denis** (qui ouvre l'accès en direct → le jury commande lui-même).
+> **Backend livré** : `jarvis/policy/roles.py` (RolePolicy + textes), contrôle dans `command_router.handle_text(role=…)` (refus de tout le lot + audit `access_denied`), `_load_users` avec `role` + `_role_for`, `LoginResponse.role`, routes `GET /auth/welcome`, `GET/POST /admin/roles`, `POST /admin/disconnect-role`, garde `require_admin`, `AuditEventType.access_denied`, tests `tests/test_rbac.py`. ⚠️ Comptes additionnels existants (Madame) restent **admin** par défaut ; le jury doit être déclaré `"role":"visiteur"` dans `JARVIS_EXTRA_USERS`.
+
+### 30.1 Genèse et reformulation
+
+L'idée de départ était un simple « mode jury » (le jury voit mais ne touche pas aux ordres critiques). Denis l'a élargie à une **vraie fonctionnalité produit** : une **gestion des accès par rôle**, où un admin accorde ou retire des accès selon le rôle. Le « mode jury » n'en est qu'un **cas particulier** (rôle *visiteur*).
+
+**Angle produit (à mettre en avant face au jury)** : ce n'est pas un gadget de démo, c'est un produit pour les **maisons à locataires saisonniers / gîtes / Airbnb** — on donne à chacun exactement les accès dont il a besoin, et rien d'autre. Cela rend l'architecture de sécurité **démontrable** en direct.
+
+**Ancre architecture** : `ARCHITECTURE.md` ligne 382 prévoyait déjà « Multi-utilisateurs — 3 jours — Profils + permissions granulaires ». On déclenche une brique anticipée, on ne bricole pas.
+
+### 30.2 Modèle de rôles et capacités (Vitesse 1)
+
+Capacités exprimées par **plafond de sensibilité** (réutilise l'échelle existante safe/sensible/critique) :
+
+| Rôle | Converser / poser des questions | Actions safe (lumières, TV, volets…) | sensible (portail, garage) | critique (alarme) |
+|---|---|---|---|---|
+| **admin** (Denis) | ✅ | ✅ | ✅ | ✅ (comportement actuel inchangé) |
+| **locataire** | ✅ | ✅ | ❌ | ❌ |
+| **visiteur / jury** | ✅ | ❌ | ❌ | ❌ |
+
+- Le **visiteur** peut **interroger Jarvis** (conversation + recherche web, ce que Denis appelle « façon Perplexity ») mais ne déclenche **aucune** action sur la maison.
+- En **Vitesse 1**, le locataire a accès à **tous** les devices safe (le périmètrage **par zone/chambre** est repoussé en Vitesse 2).
+
+### 30.3 Point d'application unique (où coder l'application)
+
+**`jarvis-core/jarvis/core/command_router.py` → `handle_text` (lignes ~153-282).** C'est le seul endroit à modifier :
+- Après le routage du batch (`routed = self._tool_router.route_batch(...)`, ligne ~188), **avant** l'étape 3 (confirmation, lignes 205-247) et l'étape 4 (exécution directe, 249-252) :
+  1. Résoudre le **rôle de l'appelant** depuis son `user_id`.
+  2. Pour chaque commande routée, capacité requise = `control_<sensibilité>` (`r.default_sensitivity`).
+  3. Si le rôle n'a pas la capacité → la commande est **bloquée**.
+  4. **Choix V1 (simple et sûr)** : si le batch contient ≥1 commande bloquée → **refuser tout le batch** avec une réplique élégante + événement d'audit `access_denied` (rôle, domaine, outil). Mixte « j'exécute le permis, je refuse le reste » = repoussé en V2.
+  5. Si le plan ne contient **aucune** invocation (pure conversation) → laisser passer (le visiteur peut poser ses questions).
+
+> Note : le chemin LLM (command_router) fait sa propre agrégation de sensibilité via `RoutedCommand.default_sensitivity` ; il **n'appelle pas** `PolicyEngine.evaluate`. L'application des rôles se fait donc **dans command_router**, pas dans `policy/engine.py`. (Sensibilités de base : `policy/engine.py` `DEFAULT_SENSITIVITY` lignes 26-31 ; portail/garage = sensible, alarme = critique.)
+
+### 30.4 Identité, rôle et titre
+
+- **Comptes** : réutiliser le mécanisme existant `_load_users` (`main.py` 108-132). Étendre chaque entrée de `JARVIS_EXTRA_USERS` avec un champ **`role`** (et le `title` déjà géré). Compte principal (Denis) = rôle `admin` par défaut. Exemple : `{"username":"jury","title":"Votre Sagacité","role":"visiteur"}` (mot de passe optionnel, hérite du principal).
+- **Threader le `user_id` jusqu'au routeur** : `/intent/text` (347-369) a déjà le `user_id` de session → le passer à `handle_text(..., user_id=...)` (nouveau paramètre, défaut `"denis"` pour compat). Faire de même pour `/intent/audio` et `/intent/audio_full` qui utilisent aujourd'hui `Form(default="denis")` + `require_bearer_token` : basculer sur `Depends(require_session)` pour récupérer le vrai `user_id`.
+- **Titre d'adresse par rôle** : déjà en place. `_title_for(user_id)` (135-138) renvoie le titre du compte ; `_apply_title` (141-149) substitue « Monsieur » → titre dans **texte + voix**. Configurer le compte jury avec `title="Votre Sagacité"` suffit → Jarvis dira « Bien, Votre Sagacité, ce sera fait. ». ⚠️ Vérifier que les **répliques de refus** contiennent bien « Monsieur » comme gabarit pour être substituées, et appliquer `_apply_title` aussi sur le chemin `/intent/audio_full`.
+- **Répliques de refus (à rédiger, ton majordome pince-sans-rire)**, ex. : « Je crains de ne pas avoir cette latitude pour vous, Monsieur. » / « Cela dépasse les prérogatives que l'on m'a confiées vous concernant, Monsieur. »
+
+### 30.5 Écran admin minimal + élévation en direct
+
+- **Écran admin** (front `jarvis-cloud`, visible **uniquement** au rôle admin) : liste les 3 rôles avec des **interrupteurs** par capacité (converser / safe / sensible / critique). Basculer un interrupteur = accorder/retirer un accès. Couvre aussi le besoin **« élévation en direct »** (ex. accorder `safe` au visiteur le temps de la démo).
+- **Backend** : route réservée à l'admin `POST /admin/roles` (exige une session admin) qui écrit un **override en mémoire** des capacités par rôle. Le contrôle du §30.3 lit les capacités **courantes** (overridées si besoin). Persistance fichier/base = repoussée en Vitesse 2.
+
+### 30.6 Déconnexion jury (clin d'œil)
+
+- Route admin `POST /admin/disconnect-role` (ou bouton) qui **invalide les sessions** du rôle visiteur (boucle sur `_SESSIONS`, retire celles dont le `user_id` mappe vers *visiteur*) et renvoie une réplique pince-sans-rire. Bouton dédié sur l'écran admin.
+
+### 30.7 Hors périmètre Vitesse 1 (= Vitesse 2, après le 4 juin)
+
+- Tableau de bord admin **granulaire par device et par zone** (chambre 1, étage, etc.).
+- Création de **rôles/comptes à la volée** depuis l'UI.
+- **Persistance** propre (fichier/base) des rôles et overrides.
+- **Session conversationnelle par utilisateur** (résout la limite ci-dessous).
+- Batch mixte « exécute le permis, refuse le reste ».
+
+### 30.8 Limite connue + garde-fous
+
+- **Session partagée** : `command_router._session` est **global** (`user_id="denis"` en dur). En V1, le contrôle de rôle est fait **par requête** (on passe le `user_id` à chaque appel) → l'application des droits est **correcte**. Mais l'**historique conversationnel** reste partagé : si le jury et Denis parlent en même temps, leurs tours s'entremêlent dans un seul transcript. Acceptable pour une démo **pilotée par Denis** ; le vrai multi-session est en Vitesse 2 (+2-3 h).
+- **Garde-fou chantier** : on touche au chemin de commande **sécurité-critique** à quelques jours de la soumission. → Travailler sur une **branche dédiée**, garder les tests `pytest` **au vert** (zéro régression sur le chemin de Denis), **ne pas** déployer sur la VM de prod tant que Denis n'a pas validé que sa propre démo marche toujours.
+
+### 30.9 Vérification (mode mock, aucun device réel)
+
+1. Compte **visiteur** → « ouvre le portail » → **refus poli** + audit `access_denied` ; « quelle heure est-il / cherche X sur le web » → **répond** ; aucune action maison possible.
+2. Compte **locataire** → « allume le salon » → **exécuté** ; « ouvre le garage » → **refus poli**.
+3. Compte **admin** (Denis) → comportement **identique à aujourd'hui** (safe direct, sensible→confirmation, critique→PIN).
+4. **Élévation en direct** : admin accorde `safe` au visiteur → le visiteur peut alors allumer une lumière ; admin **déconnecte le jury** → session visiteur invalidée + réplique.
+5. Jarvis adresse le visiteur par **« Votre Sagacité »** (texte + voix Andrew).
+6. `pytest` existant : **vert**.
+
+### 30.10 Questions à trancher au moment de coder
+
+- Réplique de refus exacte (1 à 2 variantes) + faut-il un ton **différent** par rôle (locataire chaleureux vs jury solennel) ?
+- Titre du **locataire** (« cher hôte » ? prénom ?) — le jury est figé sur « Votre Sagacité ».
+- Forme de l'écran admin : page dédiée `/app/admin` ou panneau dépliable sur le tableau de bord existant ?
+
+*Section ajoutée le 02/06/2026 (Denis avec Anto). Cadrage seul, aucun code écrit. Périmètre = Vitesse 1. Code lors d'une prochaine session lancée par Denis.*
+
+### 30.11 Bilan fin de session 02/06 + reprise 03/06 (déploiement par Anto)
+
+**État au soir du 02/06 — TOUT codé, testé, validé ; RIEN déployé. Branche `feat/rbac-jury` (non commitée).**
+
+Réalisé dans la journée :
+- **Backend** (`jarvis-core`) : `jarvis/policy/roles.py` (RolePolicy + textes refus/accueil), contrôle de rôle dans `command_router.handle_text(role=)`, `_load_users`+`_role_for`, `LoginResponse.role`, routes `GET /auth/welcome` + `GET/POST /admin/roles` + `POST /admin/disconnect-role`, garde `require_admin`, `AuditEventType.access_denied`, `CORSMiddleware` (finalement inutilisé). Tests `tests/test_rbac.py` : **13/13**.
+- **Review adversariale** (workflow 22 agents) → **faille HIGH corrigée** : la confirmation orale revérifie désormais le rôle avant exécution (un jury ne peut plus valider par « oui » un pending sensible créé par l'admin). Aussi corrigés : `/session/state`+`/session/reset` réservés admin, déconnexion du rôle admin interdite, `set_level` robuste. (Limite assumée V2 : session conversationnelle non isolée par utilisateur — exploit fermé, OK pour démo pilotée.)
+- **Transport = webhooks n8n** (le backend n'est joignable qu'en HTTP → pas d'appel direct depuis le front HTTPS, « contenu mixte »). Webhooks créés + **actifs** : `Jarvis - Welcome Bridge` (`TRZwgoh1hOU2jNaZ`, path `jarvis-welcome`) et `Jarvis - Admin Bridge` (`EyZs4FLgo8HcyFVI`, path `jarvis-admin`, champ `op` : `roles_get`/`roles_set`/`disconnect`). Relai du Bearer OK, testés 401 sans token.
+- **Front** (`jarvis-cloud`) : `config.ts` (URLs webhook par défaut), `auth.ts` (role + getRole + updateSessionRole), `jarvis-api.ts` (4 fonctions vers webhooks), `login/page.tsx` (unlockAudio), `app/page.tsx` (rôle + accueil parlé une fois + bouton Admin), nouveau `components/AdminPanel.tsx`. `next build` OK.
+
+**Reprise 03/06/2026 matin — Anto exécute le déploiement lui-même** (Denis ne le fait pas ; Anto a installé la VM, il refait l'opération) :
+1. **Backend sur la VM** : se connecter à la VM (`/opt/jarvis`), récupérer la branche `feat/rbac-jury` (pull ou merge dans la branche déployée), installer deps si besoin, **redémarrer `jarvis.service`**. Vérifier `/healthz`, puis que `/auth/welcome` et `/admin/roles` répondent.
+2. **Compte jury** : ajouter dans le `.env` VM la variable `JARVIS_EXTRA_USERS` avec `{"username":"jury","role":"visiteur","title":"Votre Sagacité"}` (mot de passe propre ou hérité). Redémarrer le service.
+3. **Front** : `npm run build` (jarvis-cloud) puis déposer l'export par FTP Hostinger (FileZilla « Creator system IA ») dans `/jarvis/`.
+4. **Test bout-en-bout** : (a) login jury → accueil parlé « Votre Sagacité » + action refusée + orientation visio ; (b) login Denis → bouton Admin + écran des droits + **élévation en direct** (accorder `safe` au visiteur → le jury peut alors agir) + déconnexion jury.
+5. **Commit** de la branche proprement — à valider avec Denis, idéalement après test concluant.
+
+*Carte des serveurs : voir mémoire `reference_jarvis_deploiement.md`. État détaillé : `project_jarvis_roles_rbac.md`.*
+
+### 30.12 Déploiement RBAC sur la VM — EFFECTUÉ le 03/06/2026 (par Anto)
+
+> **État : backend RBAC EN LIGNE et fonctionnel sur la VM (39/39 contrôles verts), zéro régression. Test manuel par Denis REPORTÉ au soir du 03/06. RIEN n'est encore commité (ni la branche locale `feat/rbac-jury`, ni la VM). Front public `jarvis.creatorsystemia.fr` INTACT (non redéployé).**
+
+**Validation locale d'abord** : `pytest tests/test_rbac.py` **13/13** + suite complète **22/22** (zéro régression sur le chemin de Denis, garde-fou §30.8) + **smoke test HTTP 39/39** (routes réelles via TestClient en mode mock) + `next build` OK.
+
+**Structure VM réelle (corrige une info périmée de la mémoire)** : le dépôt git est à **`/opt/jarvis/`** (monorepo `jarvis-core/` + `jarvis-cloud/` + …), **PAS** une « structure racine divergente ». Service `jarvis.service` : `WorkingDirectory=/opt/jarvis/jarvis-core`, `ExecStart=… -m uvicorn jarvis.main:app --host 0.0.0.0 --port 8765`, `EnvironmentFile=/opt/jarvis/jarvis-core/.env`. Accès `ssh denis@192.168.1.142` (clé SSH ; il a fallu **réparer les permissions Windows** de `~/.ssh/id_ed25519` via `icacls /inheritance:r /grant:r "PCDENIS\s2dre:F"` — la clé était rejetée « UNPROTECTED PRIVATE KEY FILE »).
+
+**Divergence diagnostiquée (et pourquoi un scp brutal aurait régressé)** : la VM porte du travail **non versionné dans le dépôt local** — commits VM (`fix mail`, sous-agent mail IMAP, agenda Google, programme TV Freebox) absents en local, **+** modifications **non commitées** sur la VM (`main.py` +64 = système Muriel/`_apply_title`, `command_router.py` +1 = `delete_event`, plus `agenda_*`, `tahoma_agent`, `llm_client`, `personality.md`). **Preuve SHA256** : mon `HEAD` local == working tree VM **à l'octet près** pour `main.py`, `core/command_router.py`, `domain/types.py` (contenu identique, historique git divergent). Donc mes fichiers locaux (HEAD **+** RBAC non commité) **SONT** le résultat fusionné correct → aucune fusion manuelle, et les fichiers VM non touchés (mail/agenda/tahoma) restent intacts.
+
+**Filet de secours** : sauvegarde complète **`/opt/jarvis/_backup-rbac-20260603-054033`** = patch des modifs non commitées (`git diff HEAD`) + `.bak` de main/command_router/types + copie du `.env` + `git bundle --all` (vérifié OK). Rollback = restaurer les `.bak`, supprimer `policy/roles.py`, restart.
+
+**Greffe appliquée** : `scp` des 4 fichiers (`jarvis/main.py`, `jarvis/core/command_router.py`, `jarvis/domain/types.py`, `jarvis/policy/roles.py` neuf) en LF aux bons emplacements → `py_compile` VM OK. **Compte jury** ajouté dans `JARVIS_EXTRA_USERS` du `.env` VM via script idempotent **sans jamais lire/afficher le `.env`** : `{"username":"jury","role":"visiteur"}` (titre hérité du défaut de rôle `roles.py` = « Votre Sagacité » ; mot de passe **hérité du compte principal**). `.env` sauvegardé 2× avant modif. `sudo systemctl restart jarvis.service`.
+
+**Vérifications post-déploiement** : `/healthz` → `{"status":"ok","mode":"production","tts_loaded":true}` (l'app redémarre avec **tous** les modules = non-régression mail/agenda confirmée). Routes RBAC câblées (`/auth/welcome`, `/admin/roles`, `/admin/disconnect-role` → **401** sans token). **Smoke test 39/39 dans l'environnement Python réel de la VM** (in-process, comptes de test isolés, mode mock). Chemin **front → n8n cloud → VM** vérifié : webhooks `jarvis-login` / `jarvis-welcome` / `jarvis-admin` relaient (401 sans token). Front local lancé (`npm run dev`, `localhost:3000`) — n'a que `.env.production` (non chargé en dev) → utilise les webhooks cloud par défaut.
+
+**RESTE À FAIRE** :
+1. **Denis teste de ses mains ce soir** (login `jury` avec son mot de passe habituel → accueil « Votre Sagacité » + bridage + orientation visio ; login `denis` → bouton Admin + élévation en direct + déconnexion jury). ⚠️ VM en **mode production** : une action en admin/jury-élevé pilote un **vrai** appareil.
+2. Si OK → **réconciliation git propre** : rapatrier le travail VM (mail/agenda/Muriel/correctifs) dans le dépôt local, fusionner avec le RBAC, **committer** la branche `feat/rbac-jury`, remettre la VM sous contrôle git.
+3. **FTP** du front sur Hostinger `/jarvis/` (`npm run build` → `out/` → `/jarvis/`).
+4. Envisager un **mot de passe jury distinct** + nettoyer `_backup-rbac-*` une fois validé.
+
+*Section ajoutée le 03/06/2026 (Anto). Test manuel reporté au soir du 03/06 à la demande de Denis.*
+
+---
+
+## 31. Session 03/06/2026 soir — Tests RBAC en ligne + correctifs latence/voix/accueil
+
+> **Statut : TOUT déployé EN LIGNE (backend VM + n8n + front public `jarvis.creatorsystemia.fr`). RIEN n'est commité (ni VM, ni local).** Réconciliation git toujours en attente (§30.12.2). Sauvegardes `.bak` horodatées sur la VM pour chaque fichier touché.
+
+### 31.1 Bug initial corrigé — plantage « Unexpected end of JSON input »
+- **Symptôme** : en tant que `jury`, une question de **conversation** plantait (`Unexpected end of JSON input`).
+- **Cause racine (prouvée par n8n, exéc 15577)** : le nœud HTTP « Appel Jarvis Freebox » avait un **timeout de 15 s** ; les réponses longues (LLM + synthèse Edge-TTS) dépassaient 15 s → n8n renvoyait un **corps vide** → `JSON.parse('')` côté front.
+- **Correctifs** : (a) `front jarvis-api.ts` → `parseJsonOrThrow()` (plus jamais de crash sur corps vide, message majordome). (b) `main.py` → synthèse vocale **bornée** `TTS_SYNTH_TIMEOUT_S = 20.0` (au-delà → repli voix navigateur, jamais de blocage). (c) `personality.md` → **réponses orales brèves (2-3 phrases)**. (d) **n8n Command Bridge** : timeout **15 s → 45 s**.
+
+### 31.2 RBAC — confirmé intact (pas de régression)
+- `_load_users()` (avec `.env` chargé) : **`denis`=admin, `jury`=visiteur, `Muriel`=admin**.
+- Logique de blocage prouvée : **visiteur → niveaux autorisés = []** (garage/lumière refusés) ; admin = tout. `pytest` **22/22** (dont 13 RBAC).
+- Piège compris : sur une **question** (« est-ce que tu *vas* ouvrir le garage ») le LLM **converse** (aucune commande émise) → le RBAC ne bloque que les **ordres**. Le visiteur a le droit de discuter.
+
+### 31.3 Le LLM connaît désormais le rôle de l'appelant (anti-divulgation)
+- Avant : sur une question méta, le LLM **inventait** (« je n'ai pas de config », « accès complet ») et **révélait l'archi** (variable d'env, tool_call).
+- Fix : `llm_client._build_system_prompt(role)` injecte un **bloc « CONTEXTE D'ACCÈS — IMPÉRATIF »** (visiteur = aucune action, ne jamais prétendre exécuter, ne jamais mentionner config/mécanisme ; locataire = confort only). `command_router.handle_text` passe `role` à `plan_in_conversation(role=…)`.
+
+### 31.4 Voix : markdown + cohérence Andrew
+- **Astérisques prononcés** (« astérisque ») → `main.py._strip_markdown()` retire `* # \` >` et puces **avant TTS et avant affichage** ; `personality.md` interdit le markdown.
+- **Voix navigateur anglaise sur réponses longues** : c'était la borne TTS à 9 s (trop serrée) → remontée à **20 s** (présentation ~13 s observée conservée en Andrew, < 45 s n8n).
+
+### 31.5 Identité / nom d'adresse — DÉCISION FINALE : « Monsieur »
+- « Votre Sagacité » jugé trop lourd → **`DEFAULT_TITLE_BY_ROLE` = « Monsieur » pour tous les rôles**.
+- Une étape « Comment dois-je vous appeler ? » (saisie vocale, nom non persisté, visiteur only) a été **construite puis ENTIÈREMENT SUPPRIMÉE** à la demande de Denis (voix féminine navigateur qui se chevauchait, prise de tête). **`NamePrompt.tsx` supprimé.** Jarvis dit « Monsieur ». (Le param backend `display_name` et le relai n8n restent en place mais **inertes** — le front ne l'envoie plus.)
+
+### 31.6 Accueil automatique enrichi + noms corrigés
+- **Noms** : « Denis **Solé** » (accent, sinon TTS lit « solde ») et « **IApreneurs Academy** » (≠ « Creator Academy ») — corrigés dans `auto_introduction.md` + `auto_introduction_brief.md` (le brief alimente les réponses « présente-toi ») **et** dans `welcome_speech`.
+- **`welcome_speech(visiteur)`** réécrit : se présente + **conseille le bouton micro** (mains libres perfectible) + annonce les **accès restreints par sécurité** + oriente visio. Joué **automatiquement à la connexion** (plus besoin de demander « présente-toi »).
+- **Accueil rejoué à CHAQUE connexion** : `app/page.tsx` — drapeau `WELCOME_FLAG` lié au **token de session** (et non plus un booléen figé), retiré en cas d'échec.
+
+### 31.7 ⚠️ BUG OUVERT À VÉRIFIER DEMAIN — accueil muet en ligne
+- En **local** l'accueil jouait. **En ligne** (`jarvis.creatorsystemia.fr`), Denis rapporte « il ne se présente pas ».
+- **Backend OK** (exéc welcome 15612 : renvoie `speak` + `speak_audio_base64` + « Solé »/« IApreneurs », role visiteur). **CORS OK** (les 3 webhooks répondent `Access-Control-Allow-Origin: *`). → Le souci est **côté navigateur** (autoplay refusé : le MP3 arrive ~8-14 s après le clic de connexion, hors fenêtre d'autorisation).
+- **Fix déployé** : bouton **« 🔊 Écouter la présentation de Jarvis » TOUJOURS visible** dès réception de l'accueil (contourne l'autoplay — un clic = geste frais = son garanti).
+- **À FAIRE DEMAIN** : Denis recharge en vidant le cache (Ctrl+Maj+R), reconnexion `jury`, et confirme : (1) le bouton bleu 🔊 apparaît-il ? (2) le texte de présentation s'affiche-t-il ? (3) la voix part-elle au clic ? Si « rien ne s'affiche » persiste → inspecter la console navigateur.
+
+### 31.8 Mot de passe jury distinct
+- Aujourd'hui `jury` (et `Muriel`) **héritent** du mot de passe principal.
+- Script déposé : **`/opt/jarvis/jarvis-core/set_jury_password.sh`** (saisie **masquée**, sauvegarde `.env`, restart auto). Denis le lance lui-même : `ssh -t denis@192.168.1.142 "bash /opt/jarvis/jarvis-core/set_jury_password.sh"`. Anto ne voit jamais le mot de passe.
+
+### 31.9 Cartographie technique (rappel)
+- **Backend** : `ssh denis@192.168.1.142`, venv `/opt/jarvis/jarvis-core/.venv`, `jarvis.service` port **8765**, joint depuis n8n via IP publique Free **88.162.216.160:48765**.
+- **Front public** : FTP **147.79.103.79** dossier **`/jarvis/`** (profil FileZilla « Creator system IA »). Build `output: export` → `out/` → FTP (script Python, creds extraits de FileZilla sans affichage — **autorisation explicite ponctuelle de Denis**). 71 fichiers.
+- **n8n** (creatorweb.fr) : `jarvis-command` = `lWH7699zkSGpCqFj`, `jarvis-welcome` = `TRZwgoh1hOU2jNaZ`, `jarvis-admin` = `EyZs4FLgo8HcyFVI`, `jarvis-login` = `1HLZnQVovXg0dUii`.
+- `.env.production` (front) ne contient que `NEXT_PUBLIC_JARVIS_WEBHOOK_URL` + `_LOGIN_URL` + `_USER_ID` ; WELCOME/ADMIN viennent des **défauts de `config.ts`** (creatorweb.fr).
+
+### 31.10 Fichiers touchés (NON commités)
+- **Backend VM + local** : `jarvis/main.py`, `jarvis/policy/roles.py`, `jarvis/orchestrator/llm_client.py`, `jarvis/core/command_router.py`, `config/prompts/personality.md`, `config/prompts/auto_introduction.md`, `config/prompts/auto_introduction_brief.md`, `tests/test_rbac.py` (mock `_FakeLLM` + param `role`).
+- **Front local + déployé** : `src/lib/jarvis-api.ts`, `src/lib/voice.ts`, `src/lib/auth.ts`, `src/lib/config.ts`, `src/components/CommandComposer.tsx`, `src/app/app/page.tsx` ; **supprimé** `src/components/NamePrompt.tsx`.
+- **n8n** : Command Bridge + Welcome Bridge modifiés (timeouts + relai display_name).
+
+### 31.11 Reste à faire (demain et après)
+1. **Vérifier l'accueil en ligne** (§31.7) — priorité.
+2. **Réconciliation git + commit** (toujours en attente, §30.12.2) — rapatrier travail VM (mail/agenda/Muriel) + tous les correctifs de cette session, committer.
+3. Mot de passe `jury` distinct (script prêt, §31.8).
+4. Répétitions DEMO_SCRIPT, tournage, soumission (deadline **4 juin minuit** — J-1 !).
+
+*Section ajoutée le 03/06/2026 au soir (Anto), à la demande de Denis. Tout déployé en ligne, rien commité. Reprise demain.*

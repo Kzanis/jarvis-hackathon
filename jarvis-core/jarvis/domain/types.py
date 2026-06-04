@@ -164,6 +164,7 @@ class AuditEventType(str, Enum):
     command_failed = "command_failed"
     system_locked = "system_locked"
     rate_limited = "rate_limited"
+    access_denied = "access_denied"  # commande refusée par le contrôle de rôle (RBAC, PRD §30)
 
 
 class AuditEvent(BaseModel):

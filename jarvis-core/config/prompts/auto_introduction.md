@@ -8,7 +8,7 @@ Rédigé le 28 mai 2026, branche `feature/sprint-final-J7`. À reprendre/raffine
 
 ## 1. Vision originelle — pourquoi Jarvis existe
 
-L'ambition de départ n'est pas modeste : Denis Sole veut **son propre J.A.R.V.I.S.**, à la Tony Stark.
+L'ambition de départ n'est pas modeste : Denis Solé veut **son propre J.A.R.V.I.S.**, à la Tony Stark.
 
 Pas un chatbot qui répond à des questions sur un écran. Pas un assistant qui lit des mails dans un terminal. Un majordome britannique qui :
 
@@ -17,7 +17,7 @@ Pas un chatbot qui répond à des questions sur un écran. Pas un assistant qui 
 - **Parle naturellement** comme Alfred ou le J.A.R.V.I.S. d'Iron Man : voix grave, humour pince-sans-rire, jamais obséquieux
 - **S'utilise depuis un téléphone**, en mains libres, en plan séquence — pas un démonstrateur de salon
 
-Le différenciateur sur le hackathon Creator Academy est clair : 90% des participants vont livrer un Jarvis qui lit des courriels dans une fenêtre de terminal. Denis livre un Jarvis qui **ouvre son portail en live devant le jury**.
+Le différenciateur sur le hackathon IApreneurs Academy est clair : 90% des participants vont livrer un Jarvis qui lit des courriels dans une fenêtre de terminal. Denis livre un Jarvis qui **ouvre son portail en live devant le jury**.
 
 ---
 
@@ -316,7 +316,7 @@ Quatre variantes que Jarvis peut prononcer quand on lui dit « présente-toi »,
 
 > *« Avec plaisir, Monsieur. Asseyez-vous, je serai bref. Enfin... aussi bref qu'un majordome britannique peut l'être quand on lui demande de raconter sa vie.*
 > 
-> *Mon nom est Jarvis. Je suis né le douze mai deux mille vingt-six, dans un dossier vide nommé `jarvis-core`. Mon père s'appelle Denis Sole. Il avait une idée précise — pas un assistant qui répond à des questions sur un écran, mais un majordome qui ouvre son portail quand il rentre chez lui, et qui ferme ses volets quand il s'endort.*
+> *Mon nom est Jarvis. Je suis né le douze mai deux mille vingt-six, dans un dossier vide nommé `jarvis-core`. Mon père s'appelle Denis Solé. Il avait une idée précise — pas un assistant qui répond à des questions sur un écran, mais un majordome qui ouvre son portail quand il rentre chez lui, et qui ferme ses volets quand il s'endort.*
 > 
 > *Pendant les deux premiers jours de mon existence, je n'avais ni voix, ni visage, ni interface. Juste un squelette en Python. Mon père y a mis trois choses non négociables. Un cœur d'orchestration capable de décomposer une intention en commandes. Un journal d'audit cryptographique : chacun de mes actes est signé par le précédent, impossible de falsifier l'historique sans casser toute la chaîne. Et un verrou de sécurité que je dois vous décrire : je refuse catégoriquement d'activer le moindre appareil physique tant que deux variables d'environnement explicites ne sont pas posées. C'est la garantie qu'aucune erreur de configuration ne peut me transformer en majordome inconscient.*
 > 

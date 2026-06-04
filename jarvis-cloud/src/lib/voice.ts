@@ -129,7 +129,7 @@ export function speak(
   options?: { rate?: number; pitch?: number; volume?: number }
 ): Promise<void> {
   return new Promise((resolve) => {
-    if (!isSpeechSynthesisSupported() || !text.trim()) {
+    if (!isSpeechSynthesisSupported() || !text || !text.trim()) {
       resolve();
       return;
     }

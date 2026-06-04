@@ -17,6 +17,7 @@ import asyncio
 import base64
 import json
 import os
+import re
 import secrets
 import tempfile
 from contextlib import asynccontextmanager
@@ -25,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -35,6 +37,8 @@ from jarvis.orchestrator.llm_client import LLMOrchestrator, load_dotenv_if_prese
 from jarvis.orchestrator.registry import build_default_registry
 from jarvis.orchestrator.session import ConversationSession
 from jarvis.orchestrator.tool_router import ToolRouter
+from jarvis.policy import roles as roles_mod
+from jarvis.policy.roles import ADMIN, DEFAULT_TITLE_BY_ROLE, KNOWN_ROLES, RolePolicy
 
 
 # ----------------------------------------------------------------------
@@ -58,6 +62,11 @@ async def lifespan(app: FastAPI):
     session = ConversationSession()
     mode = ExecutionMode(os.getenv("EXECUTION_MODE", "mock").lower())
 
+    # Politique d'accès par rôle (RBAC, PRD §30). Partagée entre le routeur
+    # (contrôle à chaque commande) et les routes /admin (élévation en direct).
+    role_policy = RolePolicy()
+    app.state.role_policy = role_policy
+
     app.state.command_router = CommandRouter(
         registry=registry,
         llm=llm,
@@ -65,6 +74,7 @@ async def lifespan(app: FastAPI):
         audit=audit,
         session=session,
         mode=mode,
+        role_policy=role_policy,
     )
 
     # STT chargé paresseusement (Whisper prend du temps à charger)
@@ -90,6 +100,26 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# CORS — la PWA (site statique Hostinger) appelle certaines routes du backend
+# EN DIRECT (accueil /auth/welcome, /admin/*), pas via n8n. On autorise donc
+# l'origine du front. Bearer token dans l'en-tête Authorization (pas de cookie),
+# donc allow_credentials reste False. Origines configurables via JARVIS_CORS_ORIGINS.
+_cors_origins = [
+    o.strip()
+    for o in os.getenv(
+        "JARVIS_CORS_ORIGINS",
+        "https://jarvis.creatorsystemia.fr,http://localhost:3000",
+    ).split(",")
+    if o.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+
 
 # ----------------------------------------------------------------------
 # Auth — Sessions Bearer Token (PRD §9.1)
@@ -106,17 +136,20 @@ AUTH_TITLE = os.getenv("AUTH_TITLE", "Monsieur")
 
 
 def _load_users() -> dict[str, dict[str, str]]:
-    """Table {username: {"password", "title"}} des comptes autorisés.
+    """Table {username: {"password", "title", "role"}} des comptes autorisés.
 
-    - Compte principal : AUTH_USERNAME / AUTH_PASSWORD (titre AUTH_TITLE).
+    - Compte principal : AUTH_USERNAME / AUTH_PASSWORD (titre AUTH_TITLE, rôle ``admin``).
     - Comptes additionnels : variable JARVIS_EXTRA_USERS, un JSON du type
-      [{"username": "Muriel", "title": "Madame"}]. Si "password" est omis, le
-      compte hérite du mot de passe principal (AUTH_PASSWORD) — pratique pour
-      un couple qui partage le même mot de passe.
+      [{"username": "jury", "title": "Votre Sagacité", "role": "visiteur"}].
+      • "password" omis  -> hérite du mot de passe principal (couple partageant le code).
+      • "title" omis     -> titre par défaut du rôle (DEFAULT_TITLE_BY_ROLE).
+      • "role" omis      -> ``admin`` (non-régression : les comptes additionnels
+        existants, ex. Madame, restent des comptes de confiance). Pour brider un
+        compte, préciser explicitement "role": "locataire" ou "visiteur".
     """
     users: dict[str, dict[str, str]] = {}
     if AUTH_PASSWORD != "CHANGE_ME_AUTH_PWD":
-        users[AUTH_USERNAME] = {"password": AUTH_PASSWORD, "title": AUTH_TITLE}
+        users[AUTH_USERNAME] = {"password": AUTH_PASSWORD, "title": AUTH_TITLE, "role": ADMIN}
     raw = os.getenv("JARVIS_EXTRA_USERS", "").strip()
     if raw:
         try:
@@ -124,18 +157,27 @@ def _load_users() -> dict[str, dict[str, str]]:
                 u = str(entry.get("username", "")).strip()
                 # Mot de passe optionnel : hérite de AUTH_PASSWORD si absent.
                 p = str(entry.get("password", "")) or AUTH_PASSWORD
-                t = str(entry.get("title", "Monsieur")).strip() or "Monsieur"
+                role = str(entry.get("role", "")).strip().lower()
+                if role not in KNOWN_ROLES:
+                    role = ADMIN  # défaut non-régression pour comptes de confiance
+                t = str(entry.get("title", "")).strip() or DEFAULT_TITLE_BY_ROLE.get(role, "Monsieur")
                 if u and p and p != "CHANGE_ME_AUTH_PWD":
-                    users[u] = {"password": p, "title": t}
+                    users[u] = {"password": p, "title": t, "role": role}
         except Exception as e:  # JSON malformé -> on ignore les comptes additionnels
             print(f"[Jarvis] WARN: JARVIS_EXTRA_USERS invalide ({e})")
     return users
 
 
 def _title_for(user_id: str) -> str:
-    """Titre d'adresse ('Monsieur'/'Madame') associé à un identifiant."""
+    """Titre d'adresse ('Monsieur'/'Madame'/'Votre Sagacité') associé à un identifiant."""
     entry = _load_users().get(user_id)
     return entry["title"] if entry else AUTH_TITLE
+
+
+def _role_for(user_id: str) -> str:
+    """Rôle RBAC associé à un identifiant (défaut ``admin`` pour le compte principal)."""
+    entry = _load_users().get(user_id)
+    return entry.get("role", ADMIN) if entry else ADMIN
 
 
 def _apply_title(text: str, title: str) -> str:
@@ -147,6 +189,38 @@ def _apply_title(text: str, title: str) -> str:
     if not text or title == "Monsieur":
         return text
     return text.replace("Monsieur", title).replace("monsieur", title.lower())
+
+
+def _clean_display_name(raw: str | None) -> str | None:
+    """Valide le nom d'adresse choisi par l'utilisateur (PRD §30.4).
+
+    Retourne un titre propre utilisable comme vocatif, ou None si l'entrée est
+    vide/inexploitable (on retombe alors sur le titre du compte). Garde-fou : on
+    borne la longueur, on retire les retours ligne et on rejette tout ce qui
+    ressemble à une injection (le nom est inséré dans une phrase puis synthétisé).
+    """
+    if not raw:
+        return None
+    name = " ".join(raw.split()).strip(" .,:;!?\"'")
+    if not (1 < len(name) <= 40):
+        return None
+    # Lettres (accents inclus), espaces, traits d'union, apostrophes uniquement.
+    if not all(c.isalpha() or c in " -'" for c in name):
+        return None
+    return name
+
+
+def _strip_markdown(text: str) -> str:
+    """Retire le balisage markdown d'une phrase destinée à être PRONONCÉE.
+
+    Sans cela, la synthèse vocale lit « astérisque astérisque » sur un **gras**
+    (constat démo 03/06). On enlève *, #, `, > et les puces de liste.
+    """
+    if not text:
+        return text
+    t = re.sub(r"[*#`>]", "", text)
+    t = re.sub(r"(?m)^\s*[-•]\s+", "", t)  # puces en début de ligne
+    return re.sub(r"[ \t]{2,}", " ", t).strip()
 
 
 # Stockage in-memory des sessions (suffisant pour 1 user en MVP)
@@ -184,6 +258,13 @@ def require_bearer_token(authorization: str | None = Header(default=None)) -> No
     require_session(authorization)
 
 
+def require_admin(user_id: str = Depends(require_session)) -> str:
+    """Exige une session dont le rôle RBAC est ``admin`` (routes d'administration)."""
+    if _role_for(user_id) != ADMIN:
+        raise HTTPException(status_code=403, detail="Action réservée à l'administrateur")
+    return user_id
+
+
 # ----------------------------------------------------------------------
 # Schémas API
 # ----------------------------------------------------------------------
@@ -193,6 +274,9 @@ class TextIntentRequest(BaseModel):
 
     text: str = Field(..., min_length=1, max_length=2000)
     user_id: str = Field(default="denis", max_length=64)
+    # Nom d'adresse choisi par l'utilisateur (« comment dois-je vous appeler ? »).
+    # Optionnel : s'il est fourni, il prime sur le titre du compte (PRD §30.4).
+    display_name: str | None = Field(default=None, max_length=40)
 
 
 class ExecutionRecordSchema(BaseModel):
@@ -257,6 +341,7 @@ class LoginResponse(BaseModel):
     token: str
     user_id: str
     title: str = "Monsieur"
+    role: str = "admin"
     expires_at: str  # ISO 8601
 
 
@@ -293,6 +378,7 @@ async def auth_login(body: LoginRequest) -> LoginResponse:
         token=token,
         user_id=body.username,
         title=entry["title"],
+        role=entry.get("role", ADMIN),
         expires_at=expires_at.isoformat() + "Z",
     )
 
@@ -318,21 +404,34 @@ async def healthz() -> dict[str, Any]:
     }
 
 
+# Garde-fou de latence : au-delà de ce délai, on abandonne la voix Andrew et on
+# laisse le front parler en synthèse navigateur. Réglé à 20s pour PRÉSERVER la voix
+# Andrew sur les réponses un peu longues (présentation ~13s observée) tout en
+# restant sous le timeout du nœud HTTP n8n « Appel Jarvis Freebox » (45s — PRD §30.12).
+TTS_SYNTH_TIMEOUT_S = 20.0
+
+
 async def _synthesize_speak_audio(text: str) -> str | None:
     """Synthétise la phrase majordome via Edge-TTS Andrew, retourne le mp3 en base64.
 
-    Renvoie None si le service TTS n'est pas disponible ou si la synthèse échoue —
-    la PWA basculera alors sur sa synthèse navigateur (Web Speech).
+    Renvoie None si le service TTS n'est pas disponible, si la synthèse échoue, ou
+    si elle dépasse TTS_SYNTH_TIMEOUT_S — la PWA basculera alors sur sa synthèse
+    navigateur (Web Speech). Le garde-fou de délai évite que la synthèse d'une
+    longue réponse bloque la route au-delà du timeout du webhook n8n (PRD §30.12).
     """
     tts = getattr(app.state, "tts", None)
+    text = _strip_markdown(text)  # filet : jamais de « astérisque » prononcé
     if tts is None or not text.strip():
         return None
     tmp_dir = Path(tempfile.mkdtemp())
     tmp_mp3 = tmp_dir / "speak.mp3"
     try:
-        await tts.synthesize(text, tmp_mp3)
+        await asyncio.wait_for(tts.synthesize(text, tmp_mp3), timeout=TTS_SYNTH_TIMEOUT_S)
         audio_bytes = tmp_mp3.read_bytes()
         return base64.b64encode(audio_bytes).decode("ascii")
+    except asyncio.TimeoutError:
+        print(f"[Jarvis] TTS synthèse trop lente (>{TTS_SYNTH_TIMEOUT_S}s) — repli voix navigateur")
+        return None
     except Exception as e:
         print(f"[Jarvis] TTS synthèse échouée : {e}")
         return None
@@ -355,9 +454,13 @@ async def intent_text(
     pour que la PWA puisse jouer la vraie voix Jarvis plutôt que la voix système.
     """
     router: CommandRouter = app.state.command_router
-    result = await router.handle_text(body.text, now=datetime.utcnow())
-    # Genrage selon l'utilisateur connecté (déduit du token de session) — texte ET TTS
-    result.speak = _apply_title(result.speak, _title_for(user_id))
+    result = await router.handle_text(
+        body.text, now=datetime.utcnow(), role=_role_for(user_id)
+    )
+    # Titre d'adresse : le nom choisi par l'utilisateur prime sur le titre du
+    # compte (PRD §30.4). Appliqué au texte ET à la voix Andrew.
+    title = _clean_display_name(body.display_name) or _title_for(user_id)
+    result.speak = _strip_markdown(_apply_title(result.speak, title))
     response = _result_to_response(result)
 
     audio_b64 = await _synthesize_speak_audio(result.speak)
@@ -372,8 +475,8 @@ async def intent_text(
 @app.post("/intent/audio", response_model=IntentResponse)
 async def intent_audio(
     audio: UploadFile = File(...),
-    user_id: str = Form(default="denis"),
-    _: None = Depends(require_bearer_token),
+    user_id: str = Form(default="denis"),  # conservé pour compat front ; PAS utilisé pour la sécurité
+    session_user_id: str = Depends(require_session),
 ) -> IntentResponse:
     """Audio en entrée -> Whisper STT -> pipeline complet -> texte en sortie."""
     if app.state.stt is None:
@@ -398,8 +501,10 @@ async def intent_audio(
         raise HTTPException(status_code=400, detail="Transcription vide")
 
     router: CommandRouter = app.state.command_router
-    result = await router.handle_text(transcribed, now=datetime.utcnow())
-    result.speak = _apply_title(result.speak, _title_for(user_id))
+    result = await router.handle_text(
+        transcribed, now=datetime.utcnow(), role=_role_for(session_user_id)
+    )
+    result.speak = _apply_title(result.speak, _title_for(session_user_id))
     response = _result_to_response(result)
     return JSONResponse(
         content={**response.model_dump(), "transcribed_text": transcribed},
@@ -409,8 +514,8 @@ async def intent_audio(
 @app.post("/intent/audio_full")
 async def intent_audio_full(
     audio: UploadFile = File(...),
-    user_id: str = Form(default="denis"),
-    _: None = Depends(require_bearer_token),
+    user_id: str = Form(default="denis"),  # conservé pour compat front ; PAS utilisé pour la sécurité
+    session_user_id: str = Depends(require_session),
 ):
     """Audio en entrée -> texte -> pipeline -> audio TTS en sortie (mp3 binaire)."""
     if app.state.stt is None:
@@ -439,8 +544,10 @@ async def intent_audio_full(
         raise HTTPException(status_code=400, detail="Transcription vide")
 
     router: CommandRouter = app.state.command_router
-    result = await router.handle_text(transcribed, now=datetime.utcnow())
-    result.speak = _apply_title(result.speak, _title_for(user_id))
+    result = await router.handle_text(
+        transcribed, now=datetime.utcnow(), role=_role_for(session_user_id)
+    )
+    result.speak = _apply_title(result.speak, _title_for(session_user_id))
 
     # Synthèse TTS de la réponse
     tts_out = Path(tempfile.mkdtemp()) / "jarvis_response.mp3"
@@ -461,7 +568,7 @@ async def intent_audio_full(
 
 
 @app.get("/session/state")
-async def session_state(_: None = Depends(require_bearer_token)) -> dict[str, Any]:
+async def session_state(_: str = Depends(require_admin)) -> dict[str, Any]:
     router: CommandRouter = app.state.command_router
     return {
         "user_id": router._session.user_id,
@@ -471,7 +578,94 @@ async def session_state(_: None = Depends(require_bearer_token)) -> dict[str, An
 
 
 @app.post("/session/reset")
-async def session_reset(_: None = Depends(require_bearer_token)) -> dict[str, Any]:
+async def session_reset(_: str = Depends(require_admin)) -> dict[str, Any]:
     router: CommandRouter = app.state.command_router
     router._session.reset()
     return {"status": "reset", "history_size": 0}
+
+
+# ----------------------------------------------------------------------
+# RBAC — accueil selon le rôle + administration (PRD §30)
+# ----------------------------------------------------------------------
+
+class RoleCapabilityUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: str = Field(..., min_length=1, max_length=32)
+    capability: str = Field(..., min_length=1, max_length=32)  # "safe" | "sensible" | "critique"
+    allowed: bool
+
+
+class DisconnectRoleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: str = Field(default="visiteur", min_length=1, max_length=32)
+
+
+@app.get("/auth/welcome")
+async def auth_welcome(
+    user_id: str = Depends(require_session),
+    display_name: str | None = None,
+) -> JSONResponse:
+    """Discours d'accueil prononcé à la connexion, adapté au rôle (texte + voix Andrew).
+
+    ``display_name`` (query, optionnel) : nom mémorisé par le front aux connexions
+    suivantes — personnalise l'accueil (« Bonjour <Nom> ») au lieu du titre par défaut.
+    """
+    role = _role_for(user_id)
+    title = _clean_display_name(display_name) or _title_for(user_id)
+    speak = _strip_markdown(_apply_title(roles_mod.welcome_speech(role), title))
+    audio_b64 = await _synthesize_speak_audio(speak)
+    return JSONResponse(content={
+        "speak": speak,
+        "role": role,
+        "title": title,
+        "speak_audio_base64": audio_b64,
+        "speak_audio_mime": "audio/mpeg" if audio_b64 else None,
+    })
+
+
+@app.get("/admin/roles")
+async def admin_get_roles(_: str = Depends(require_admin)) -> dict[str, Any]:
+    """État courant des capacités par rôle (pour l'écran admin)."""
+    policy: RolePolicy = app.state.role_policy
+    return {
+        "roles": policy.snapshot(),
+        "capabilities": list(roles_mod.EDITABLE_CAPABILITIES),
+    }
+
+
+@app.post("/admin/roles")
+async def admin_set_role(
+    body: RoleCapabilityUpdate,
+    _: str = Depends(require_admin),
+) -> dict[str, Any]:
+    """Accorde/retire un niveau d'action à un rôle (élévation en direct, PRD §30.5)."""
+    policy: RolePolicy = app.state.role_policy
+    target = body.role.strip().lower()
+    if target == ADMIN:
+        raise HTTPException(status_code=400, detail="Le rôle admin ne peut être modifié")
+    if target not in KNOWN_ROLES:
+        raise HTTPException(status_code=400, detail=f"Rôle inconnu : {body.role}")
+    if body.capability not in roles_mod.EDITABLE_CAPABILITIES:
+        raise HTTPException(status_code=400, detail=f"Capacité inconnue : {body.capability}")
+    policy.set_level(target, body.capability, body.allowed)
+    return {"status": "ok", "roles": policy.snapshot()}
+
+
+@app.post("/admin/disconnect-role")
+async def admin_disconnect_role(
+    body: DisconnectRoleRequest,
+    _: str = Depends(require_admin),
+) -> dict[str, Any]:
+    """Invalide toutes les sessions des utilisateurs portant ce rôle (déconnexion jury, PRD §30.6)."""
+    target = body.role.strip().lower()
+    if target == ADMIN:
+        raise HTTPException(status_code=400, detail="Impossible de déconnecter le rôle administrateur")
+    revoked = 0
+    for token in list(_SESSIONS.keys()):
+        sess = _SESSIONS.get(token)
+        if sess and _role_for(sess["user_id"]) == target:
+            _SESSIONS.pop(token, None)
+            revoked += 1
+    return {"status": "disconnected", "role": target, "sessions_closed": revoked}

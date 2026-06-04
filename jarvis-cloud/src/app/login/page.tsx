@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { getSession, loginRequest, LoginError } from "@/lib/auth";
+import { unlockAudio } from "@/lib/voice";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -28,6 +29,9 @@ export default function LoginPage() {
     setPending(true);
     try {
       await loginRequest(username, password);
+      // Le clic « Se connecter » est le seul geste utilisateur avant /app :
+      // on en profite pour débloquer l'autoplay mobile de l'accueil parlé.
+      unlockAudio();
       router.replace("/app");
     } catch (err) {
       const message =

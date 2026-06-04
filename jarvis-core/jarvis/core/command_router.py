@@ -38,6 +38,7 @@ from jarvis.orchestrator.llm_client import LLMOrchestrator, LLMUnavailable, Plan
 from jarvis.orchestrator.registry import SubAgentRegistry
 from jarvis.orchestrator.session import ConversationSession, PendingBatch
 from jarvis.orchestrator.tool_router import RoutedCommand, ToolRouter, ToolRouterRejection
+from jarvis.policy.roles import RolePolicy, refusal_line
 
 
 # ----------------------------------------------------------------------
@@ -138,6 +139,7 @@ class CommandRouter:
         audit: AuditStore,
         session: ConversationSession | None = None,
         mode: ExecutionMode = ExecutionMode.mock,
+        role_policy: RolePolicy | None = None,
     ) -> None:
         self._registry = registry
         self._llm = llm
@@ -145,6 +147,7 @@ class CommandRouter:
         self._audit = audit
         self._session = session or ConversationSession()
         self._mode = mode
+        self._role_policy = role_policy or RolePolicy()
 
     @property
     def session(self) -> ConversationSession:
@@ -154,20 +157,28 @@ class CommandRouter:
         self,
         transcribed_text: str,
         now: datetime | None = None,
+        role: str = "admin",
     ) -> CommandRouterResult:
-        """Pipeline complet bout-en-bout avec confirmation orale PRD §9.4."""
+        """Pipeline complet bout-en-bout avec confirmation orale PRD §9.4.
+
+        ``role`` (RBAC, PRD §30) décide quelles actions l'appelant peut exécuter.
+        Défaut ``"admin"`` pour préserver le comportement mono-utilisateur (Denis) :
+        l'unique point d'entrée réel (routes HTTP) résout toujours le rôle effectif
+        depuis le token de session et le passe explicitement.
+        """
         now = now or datetime.utcnow()
 
         # 0. Si une confirmation est en attente : intercepter avant tout LLM
         pending = self._session.get_pending()
         if pending is not None:
-            return await self._handle_pending_response(pending, transcribed_text, now)
+            return await self._handle_pending_response(pending, transcribed_text, now, role)
 
         # 1. Appel LLM (Claude Haiku 4.5 via OpenRouter par défaut)
         try:
             plan = self._llm.plan_in_conversation(
                 self._session.as_llm_history(),
                 transcribed_text,
+                role=role,
             )
         except LLMUnavailable as e:
             self._session.add_user(transcribed_text)
@@ -200,6 +211,44 @@ class CommandRouter:
                         ],
                     },
                     now=now,
+                )
+
+        # 2bis. Contrôle d'accès par rôle (RBAC — PRD §30).
+        # Si le rôle de l'appelant n'a pas la capacité pour AU MOINS une commande
+        # du lot, on refuse TOUT le lot (choix V1, PRD §30.3.4) + audit access_denied.
+        if routed:
+            allowed_levels = self._role_policy.allowed_levels(role)
+            blocked = [r for r in routed if r.default_sensitivity not in allowed_levels]
+            if blocked:
+                norm_role = self._role_policy.normalize_role(role)
+                for r in blocked:
+                    self._audit_event(
+                        AuditEventType.access_denied,
+                        correlation_id=r.command.correlation_id or str(uuid.uuid4()),
+                        payload={
+                            "role": norm_role,
+                            "domain": r.domain,
+                            "tool": r.tool_name,
+                            "sensitivity": r.default_sensitivity.value,
+                        },
+                        now=now,
+                    )
+                speak = refusal_line(role)
+                self._session.add_user(transcribed_text)
+                self._session.add_assistant(speak)
+                return CommandRouterResult(
+                    speak=speak,
+                    executions=[],
+                    llm_latency_ms=plan.latency_ms,
+                    llm_model=plan.model_used,
+                    llm_provider=plan.provider_used,
+                    input_tokens=plan.input_tokens,
+                    output_tokens=plan.output_tokens,
+                    stop_reason=plan.stop_reason,
+                    rejection_reason=(
+                        f"access_denied: role={norm_role} "
+                        f"blocked={[r.tool_name for r in blocked]}"
+                    ),
                 )
 
         # 3. Si le batch contient une action sensible/critique : STOP, demander confirmation
@@ -290,6 +339,7 @@ class CommandRouter:
         pending: PendingBatch,
         transcribed_text: str,
         now: datetime,
+        role: str = "admin",
     ) -> CommandRouterResult:
         answer = _normalize_yes_no(transcribed_text)
 
@@ -316,6 +366,40 @@ class CommandRouter:
             self._session.add_user(transcribed_text)
             self._session.add_assistant(speak)
             return CommandRouterResult(speak=speak)
+
+        # answer == "yes" — RBAC : re-vérifier le rôle AVANT d'exécuter. La branche
+        # de confirmation est interceptée à l'étape 0, donc AVANT le contrôle de rôle
+        # du pipeline (étape 2bis). Sans cette re-vérification, un rôle non autorisé
+        # (ex. jury) pourrait valider par « oui » un batch sensible/critique créé par
+        # un autre rôle sur la session partagée (faille review HIGH).
+        allowed_levels = self._role_policy.allowed_levels(role)
+        denied = [
+            r for r in pending.routed_commands
+            if r.default_sensitivity not in allowed_levels
+        ]
+        if denied:
+            norm_role = self._role_policy.normalize_role(role)
+            for r in denied:
+                self._audit_event(
+                    AuditEventType.access_denied,
+                    correlation_id=r.command.correlation_id or str(uuid.uuid4()),
+                    payload={
+                        "role": norm_role,
+                        "domain": r.domain,
+                        "tool": r.tool_name,
+                        "sensitivity": r.default_sensitivity.value,
+                        "stage": "pending_confirmation",
+                    },
+                    now=now,
+                )
+            self._session.clear_pending()
+            self._session.add_user(transcribed_text)
+            speak = refusal_line(role)
+            self._session.add_assistant(speak)
+            return CommandRouterResult(
+                speak=speak,
+                rejection_reason=f"access_denied: confirmation par rôle non autorisé ({norm_role})",
+            )
 
         # answer == "yes" — on exécute le batch confirmé
         executions: list[CommandExecutionRecord] = []

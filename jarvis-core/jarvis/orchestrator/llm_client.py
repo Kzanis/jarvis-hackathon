@@ -135,11 +135,15 @@ class LLMOrchestrator:
         # Conversion ToolSpec -> tools API (format OpenAI ou Anthropic selon provider)
         self._tools = self._build_tools(registry.all_tools())
 
-    def _build_system_prompt(self) -> str:
+    def _build_system_prompt(self, role: str | None = None) -> str:
         """System prompt complet = personality.md + contexte temporel à l'instant T.
 
         Le contexte temporel est ajouté à chaque appel pour que le LLM puisse
         répondre quand Denis demande "quelle heure ?" ou "quel jour ?".
+
+        ``role`` (RBAC) : si l'appelant n'est pas admin, on injecte un bloc d'accès
+        IMPÉRATIF en fin de prompt pour que le LLM réponde juste à un visiteur/locataire
+        (ne pas prétendre exécuter, ne pas révéler la mécanique interne).
         """
         try:
             from zoneinfo import ZoneInfo
@@ -186,7 +190,28 @@ class LLMOrchestrator:
                 + self._self_knowledge
             )
 
-        return self._system_prompt_base + contexte + self_knowledge_block
+        # Bloc d'accès par rôle (RBAC) — placé EN DERNIER pour primer sur le reste.
+        access_block = ""
+        r = (role or "").strip().lower()
+        if r == "visiteur":
+            access_block = (
+                "\n\n---\n\n## CONTEXTE D'ACCÈS — IMPÉRATIF (prime sur tout le reste)\n\n"
+                "Tu t'adresses à un **visiteur**. Il ne peut déclencher **AUCUNE** action sur la maison "
+                "(ni volets, ni portail, ni garage, ni alarme, ni télévision, ni son). "
+                "S'il demande une action — même de façon hypothétique (« est-ce que tu ferais… », « vas-tu… ») — "
+                "tu réponds, bref et courtois, que tu n'as pas cette latitude pour lui, et que Denis peut la lui "
+                "ouvrir en visioconférence. Tu ne prétends JAMAIS que tu vas l'exécuter. "
+                "Tu ne mentionnes JAMAIS de configuration, variable d'environnement, fichier, tool_call, "
+                "rôle technique ni aucun mécanisme interne. Tu peux converser, renseigner, chercher — rien de plus."
+            )
+        elif r == "locataire":
+            access_block = (
+                "\n\n---\n\n## CONTEXTE D'ACCÈS — IMPÉRATIF (prime sur tout le reste)\n\n"
+                "Tu t'adresses à un **locataire** : il pilote le confort (volets, store, télévision, son, lumières) "
+                "mais PAS les fonctions de sécurité (portail, garage, alarme), réservées au propriétaire. "
+                "S'il demande une fonction de sécurité, tu refuses avec courtoisie, sans jamais décrire de mécanisme technique."
+            )
+        return self._system_prompt_base + contexte + self_knowledge_block + access_block
 
     # ------------------------------------------------------------------
     # Construction du client provider-spécifique
@@ -294,11 +319,15 @@ class LLMOrchestrator:
         history: list[dict[str, str]],
         new_user_text: str,
         model: str | None = None,
+        role: str | None = None,
     ) -> PlanResult:
         """Plan multi-tours. `history` = [{role, content}, ...] tours précédents.
 
         L'orchestrateur appelant garde la session en mémoire (ConversationSession).
         On retourne le PlanResult ; l'appelant met à jour son history.
+
+        ``role`` (RBAC) : transmis au prompt système pour cadrer les réponses
+        conversationnelles d'un visiteur/locataire (PRD §30).
         """
         if not new_user_text or not new_user_text.strip():
             raise ValueError("new_user_text vide")
@@ -306,10 +335,12 @@ class LLMOrchestrator:
         active_model = model or self._model
         full_history = list(history) + [{"role": "user", "content": new_user_text.strip()}]
         if self._format == "openai":
-            return self._plan_openai(active_model, full_history)
-        return self._plan_anthropic(active_model, full_history)
+            return self._plan_openai(active_model, full_history, role=role)
+        return self._plan_anthropic(active_model, full_history, role=role)
 
-    def _plan_openai(self, active_model: str, history: list[dict[str, str]]) -> PlanResult:
+    def _plan_openai(
+        self, active_model: str, history: list[dict[str, str]], role: str | None = None
+    ) -> PlanResult:
         """Compatible OpenAI Chat Completions (OpenRouter inclus)."""
         from openai import APIConnectionError, APIStatusError, APITimeoutError
 
@@ -320,7 +351,7 @@ class LLMOrchestrator:
                 max_tokens=self._max_tokens,
                 tools=self._tools,
                 messages=[
-                    {"role": "system", "content": self._build_system_prompt()},
+                    {"role": "system", "content": self._build_system_prompt(role)},
                     *history,
                 ],
             )
@@ -362,7 +393,9 @@ class LLMOrchestrator:
             output_tokens=getattr(usage, "completion_tokens", 0) or 0,
         )
 
-    def _plan_anthropic(self, active_model: str, history: list[dict[str, str]]) -> PlanResult:
+    def _plan_anthropic(
+        self, active_model: str, history: list[dict[str, str]], role: str | None = None
+    ) -> PlanResult:
         """API Anthropic native (tool_use + cache_control)."""
         import anthropic
 
@@ -374,7 +407,7 @@ class LLMOrchestrator:
                 system=[
                     {
                         "type": "text",
-                        "text": self._build_system_prompt(),
+                        "text": self._build_system_prompt(role),
                         "cache_control": {"type": "ephemeral"},
                     }
                 ],

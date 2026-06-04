@@ -29,7 +29,13 @@ import {
   unlockAudio,
 } from "@/lib/voice";
 
-export function CommandComposer({ title = "Monsieur" }: { title?: string }) {
+export function CommandComposer({
+  title = "Monsieur",
+  displayName = null,
+}: {
+  title?: string;
+  displayName?: string | null;
+}) {
   const [text, setText] = useState("");
   const [pending, setPending] = useState(false);
   const [listening, setListening] = useState(false);
@@ -68,7 +74,7 @@ export function CommandComposer({ title = "Monsieur" }: { title?: string }) {
     setState("thinking");
 
     try {
-      const result = await sendTextCommand(trimmed);
+      const result = await sendTextCommand(trimmed, displayName);
       setResponse(result);
       pushJarvis(result.speak);
       setState("speaking");
